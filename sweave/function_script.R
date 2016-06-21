@@ -14,6 +14,9 @@ library(RColorBrewer)
 library(scatterplot3d)
 library(MASS)
 library(clinfun)
+library(irr)
+library(heatmap.plus)
+library(psych)
 
 subCols <- c("skyblue", "palegreen2", "darkblue","dodgerblue2","#E31A1C", "green4",
              "#6A3D9A","#FF7F00", "black","gold1",
@@ -334,6 +337,9 @@ EditCairo2Clin=function(PatInfo){
   PatInfo$tumorPC[grep("NA", PatInfo$tumorPC)]=NA
   levels(PatInfo$Response)=c("CR", NA, "PD", "PR", "SD", NA)
   PatInfo$Response=factor(PatInfo$Response, levels=c("CR", "PR", "SD", "PD"))
+  PatInfo$Age=as.numeric(as.character(PatInfo$Age))
+  PatInfo$Age[PatInfo$Age<0]=NA
+  PatInfo$AgeCat=cut(PatInfo$Age, c(0, 50, 60, 70, 100), c("<50", "50-60", "60-70", "70+"))
   PatInfo
 }
 
@@ -457,7 +463,7 @@ Compress.Scores=function(Probs, Cairo.h, meth=1, prob=0.6){
   report
 }
 
-ContTable=function(tab, title, chisqtest=F,ylabL="GE classifier"){
+ContTable=function(tab, title, chisqtest=F,ylabL="GE classifier", scaleV=T){
   library("RColorBrewer")
   if (chisqtest==T){
     a1=chisq.test(tab)
@@ -474,9 +480,15 @@ ContTable=function(tab, title, chisqtest=F,ylabL="GE classifier"){
           xlab="TMA classifier", ylab=ylabL,
           main=sprintf("%s %s", title, tit2))
   }else{
+    if (scaleV==T){
   image(scale(tab), col=brewer.pal(9, "BuGn"), xaxt="n", yaxt="n",
         xlab="TMA classifier", ylab=ylabL,
-        main=sprintf("%s %s", title, tit2))}
+        main=sprintf("%s %s", title, tit2))
+  }else{
+    image(tab, col=brewer.pal(9, "BuGn"), xaxt="n", yaxt="n",
+          xlab="TMA classifier", ylab=ylabL,
+          main=sprintf("%s %s", title, tit2))   
+    }}
   xval=seq(0, 1, 1/(nr-1))
   yval=seq(0, 1, 1/(nc-1))
   axis(1, at=xval, rownames(tab))

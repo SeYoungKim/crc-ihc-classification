@@ -26,9 +26,35 @@ opts_knit$set(verbose=TRUE)
 \tableofcontents
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \clearpage
-\section{Running Image Analysis in MATLAB}
+\section{Running the Automated Classification Pipeline}
+\subsection{Patient samples: Marker staining}
+
+FFPE patient material was used to construct TMAs in this study, with diameter 0.6mm - 1mm. Depending on quantaties of material available, 1-3 cores were obtained from each patient. Below is a detailed protocol to conduct immunohistochemistry staining:
+
+Slides were created by transversely sectioning at 4$\mu$m. The paraffin-embedded slides were deparaffinated with xylene and rehydrated through a series of ethanol concentrations. Endogenous peroxidase activity was blocked by incubating in 0.3\% H2O2 in PBS at room temperature for half an hour, where after antigen retrieval was achieved by heating the slides in a citrate buffer, pH 6.0, for 20 minutes; followed by cooling in the same buffer for 10 minutes. The slides were incubated with a diluted primary antibody for one hour at room temperature or overnight at 4°C.
+
+\begin{table}[!ht]
+\centering
+  \begin{tabular}{lccc}
+    anti-CDX2  & 1:200 & Novus Biologicals & NB100-2136 \\       
+    anti-HTR2B  & 1:75 & Sigma & HPA012867 \\ 
+    anti-FRMD6 & 1:500 & Sigma & HPA001297 \\
+    anti-ZEB1 & 1:500 & Sigma & HPA027524 \\
+    anti-cytokeratin (AE1/AE3) & 1:500 &  Thermo Scientific & \\
+  \end{tabular}
+  \caption{List of IHC markers used}
+  \label{tab:1}
+\end{table}
+
+Incubation with an undiluted secondary antibody (anti-mouse-HRP  or anti-rabbit-HRP (Powervision)) for 30 minutes followed.
+Rinsing between steps was performed with PBS. The slides were developed with diaminobenzidine and counterstained with Mayers’ haematoxylin. Here after the slides were dehydrated and mounted with cover slips. Digital images of TMAs were then acquired and segmented into individual cores (e.g. using Aperio Slide Scanner).
+
+The original references for TMA construction and MSI testing are: CAIRO series: \citep{Koopman2009a}, \citep{Hendriks2003}; LUMC series:\citep{Zeestraten2014}, \citep{Goossens2014}; AMC: \citep{Melo2013}
+
+\subsection{Running Image Analysis in MATLAB}
 
 The image analysis pipeline contains the following steps: 
+
 \begin{enumerate}
 \item Firstly, the image is loaded using the \texttt{imread} function.
 \item Then the TMA area is automatically detected using \texttt{TMAOutline}. 
@@ -38,7 +64,7 @@ The image analysis pipeline contains the following steps:
 
 All images were processed in MATLAB v7.11
 
-Below, we construct a MATLAB script to analyse an image and observe the outputs from this: 
+Below, we construct a MATLAB script to analyse an image and observe the outputs from this: A copy of this script is available in the github repository \url{github.com/trinhan/crc-ihc-classification}.
 
 <<echo=TRUE>>==
 
@@ -94,6 +120,78 @@ Original TMA & TMA Area & Colour Deconvolution & Brown Area \\
 \end{tabular}
 \end{table}
 
+The resultant information required for the classification pipeline is a table for each stain containing:
+
+\begin{enumerate}
+\item The image ID. This should contain information on the location of the image on the TMA (eg. R1C2 indicates the image is in location row 1, column 2) 
+\item TMA core area (from MATLAB)
+\item Fraction of the image containing a core (from MATLAB)
+\item Stain Area (from MATLAB)
+\item Stain Intensity (from MATLAB)
+\item Stain Area Fraction (from MATLAB)
+\end{enumerate}
+
+\begin{figure}[!ht]
+\includegraphics[width=1\textwidth]{Table_Format.png}
+\caption{Example of table required for classification}
+\end{figure}
+
+One file/table per slide is permitted.
+
+\subsection{Organising data from Image-Analysis for classification in R}
+
+The following steps describes the formating of data required for input, as shown in Figure 2.
+
+\begin{figure}[!ht]
+\includegraphics[width=1\textwidth]{info_overview_pipeline.pdf}
+\caption{Information required for classification system: A. TMA maps. Multiple maps are permitted B. 5x marker table from image analysis. C. Table identifying TMA slides with maps D. Table containing MSI status(optional)}
+\end{figure}
+
+Briefly, the main files required are:
+
+\begin{itemize}
+\item \textbf{A. TMA map} Links the layout of the TMA with patient information. Table size should be the same as that extracted from image analysis. Eg. if a 20x7 scores are segmented from a slide, the TMA map should have 20x7 entries. Replicates from the same patient are permitted: the IDs should not change (eg. for Patient 1, multiple entries of "1" is sufficient. Labelling of core number "1.1", "1.2" ... is not necessary). Empty cores can be designated with "x".
+\item \textbf{B. Table of image information} For each TMA map, there should be 5 tables - one for each stain. Image number should indicate the row number prior to the column number (eg, R2C1 refers to row 2, column 1. Also permitted are underscores to separate the values eg. "CDX2\textunderscore 1 \textunderscore 2.csv", however, the former is suggested to avoid confusion). Additionally, each slide should have a 6 digit unique ID number. Filenames all the tables in B should contain this ID number (Eg. a suitable filename for CDX2 Map1 can be "CDX2\textunderscore 012345.csv"). Files without this ID number will be designated a value by alphabetical order.
+\item \textbf{C. Table containing maps for each slide}  Table C should be named ("cohortname\textunderscore slide\textunderscore no.csv"), and contain a table of TMA maps and unique identifiers from B.
+\item \textbf{D. List of samples and MSI status} 1 should indicate "MSI" and 0 should indicate "MSS" ("MSI" and "MSS" is also permited, but must be uppercase). This list is optional - these patients can be removed after the analysis. However, there may be an epithelial vs mesenchymal population weighting, so it is advised that these patients are removed beforehand.
+\end{itemize}
+
+\subsection{Running the automated classification}
+
+The following commands are required for running the classification. A copy of the AMC-classifier is available on the git hub repository, as well as the script to run this classification:
+
+
+\textbf{Step 1: } Firstly, the data needs to be arranged into two folders of interest: a folder containing the data of interest (in this case, this is the "Cairo1 set"), and a folder containing the maps of interest as wel as the table mapping  ("mapping Cairo1").
+
+<<eval=F>>==
+ReadFromCSV("Cairo1_set/", "mapping_Cairo1/")
+Cai1data=LoadFiles("Cairo1_set/")
+@
+
+\texttt{ReadFromCSV} will generate a list of RData files - one for each TMA map combining all stain information. \texttt{LoadFiles} will concatenate these files into a large matrix containing information from all samples
+
+\textbf{Step 2: } Next we preprocess the data.Load the clinical information in order to remove MSI+ samples from the cohort. We then preprocess the data to remove samples with missing cores: The entries for this will be the (a) \texttt{Cai1data} matrix defined in step 1, (b) the clinical information (column names indicating the relevant information need to be specified: i.e. the columns with the patient ids and msi status - here, designated as "ID" and "MSI"). (c) Additionally, as this is a `Test' set instead of a `Train' set, this will need to be specified. If a set is to be used as a "Train"ing set, part b must also include information on the class (d) a permitted image fraction range. This is dependent on how the cores are segmented and a full core should lie within the range of 0.3 to 0.6. Examine the ``ImFrac" values from image analysis to determine an optimal range. In this case, 0.1 to 0.8 is used as some of the cores occupy most of the image
+
+<<eval=F>>==
+Cai1data.edit=PreProcess(Cai1data, Cai1Clin[ , c("ID", "MSI")], 'Test', c(0.1, 0.8))
+@
+
+\textbf{Step 3: } Scale the information. We no longer need information on the TMA core size or fraction - this was used solely as a quality control step. These columns are removed using the \texttt{grep} function. Also, this data is then scaled using the \texttt{MedScake} function which performs median scaling
+
+<<eval=F>>==
+Cai1_raw=Cai1data.edit$data[, -grep("Im", colnames(Cai1data.edit$data))]
+Cai1_range=MedScale(Cai1_raw)
+@
+
+\textbf{Step 4:} Clasification. We will need to load the AMC-classifier, as well as the random forest library. Then use the \texttt{predict} function to obtain a prediction probability from each core. You can examine the object \texttt{C1\textunderscore R} to see the prediction probabilities. Finally, compress the scores. We will need a list of patient IDs (defined in step 2). There are 3 ways of performing the prediction: (1) any CMS4 is labelled as CMS4. (2) majority consensus (currently used) and (3) based on a combined prediction probability greater than a given threshold. Furthermore, a prection threshold is used to define CMS4 - this is currently set to 0.6 in a hope to avoid false positives. 
+
+<<eval=F>>==
+load("AMC_classifier.RData")
+library(randomForest)
+C1_R<- predict(rf.TMA, Cai1_range, type="prob")
+C1_RPc=Compress.Scores(C1_R, Cai1data.edit$PatID$Pat, 2, 0.6)
+@
+
 \newpage
 \section{Overview of Data used}
 \subsection{Packages Used}
@@ -119,7 +217,7 @@ source("function_script.R")
 
 \subsection{AMC data set}
 
-The AMC dataset was used previously \citep{Melo2013} as a discovery set to uncover three subtypes of CRC: CCS1, defined by chromosomal instability , CCS2 characterised by microsatellite instability (MSI) and CCS3 characterised by EMT. In this study, this set will be used as the training set to classify patients in the CAIRO set, CAIRO-2 set and the LUMC(Leiden) set.
+The AMC dataset was used previously \citep{Melo2013} as a discovery set to uncover three subtypes of CRC: CMS2/3, defined by chromosomal instability , CMS1 characterised by microsatellite instability (MSI) and CMS4 characterised by EMT. In this study, this set will be used as the training set to classify patients in the CAIRO set, CAIRO-2 set and the LUMC(Leiden) set.
 
 Firstly, load the data attained from image analysis. 
 <<>>==
@@ -144,7 +242,7 @@ summary(AMCclin$Met[which(AMCclin$timeMETRec2>60)])
 AMCclin$timeMETRec2[AMCclin$timeMETRec2>60]=60
 @
 
-Next, we want to remove patients with missing cores and MSI positive (or unknown) patients to produce a two-class classification system (between CCS1 and CCS3).
+Next, we want to remove patients with missing cores and MSI positive (or unknown) patients to produce a twoclass classification system (between CMS2/3 and CMS4).
 
 
 <<>>==
@@ -152,7 +250,7 @@ AMCdata.train=PreProcess(AMCdata, AMCclin[ , c("ID", "MSI2", "Class")],
                          'AMC', c(0.15, 0.6), KER.rm=F)
 @
 
-Note that the training will be based on the GE labels: There are some patients which are MSI positive who are CCS3 by GE, which we are using as our 'ground truth', and thus included in the classifier training. These patients will be 'misclassified' as CCS2 by TMA-IHC.
+Note that the training will be based on the GE labels: There are some patients which are MSI positive who are CMS4 by GE, which we are using as our 'ground truth', and thus included in the classifier training. These patients will be 'misclassified' as CMS1 by TMA-IHC.
 
 Our IHC classifier will be based on 49 patients with 121 cores.
 
@@ -170,13 +268,13 @@ dim(Cai1data)
 ## Input clinical data
 Cai1Clin=read.csv("Clinical/Cairo1_Survival_data.csv")
 Cai1Clin=Cairo1Edit(Cai1Clin)
-colnames(Cai1Clin)
+  colnames(Cai1Clin)
 
 ## remove remove empty slides
 Cai1data.edit=PreProcess(Cai1data, Cai1Clin[ , c("ID", "MSI")], 'Cai', c(0.1, 0.8), KER.rm=F)
 @
 
-Our CAIRO cohort will consist of 19 MSI (CCS2 patients), and 407 patients (with 411 cores) to be classified as CCS1 or CCS3.
+Our CAIRO cohort will consist of 19 MSI (CMS1 patients), and 407 patients (with 411 cores) to be classified as CMS2/3 or CMS4.
 
 \subsection{CAIRO2 dataset}
 
@@ -197,7 +295,7 @@ colnames(Cai2Clin)
 Cai2data.edit=PreProcess(Cai2data, Cai2Clin[ ,c("ID","MSI")], 'Cai', c(0.1, 0.8), KER.rm=F)
 @
 
-In the CAIRO-2 set, we have 8 CCS2 patients and 332 patients to be classified as CCS1 or CCS3.
+In the CAIRO-2 set, we have 8 CMS1 patients and 332 patients to be classified as CMS2/3 or CMS4.
 
 \subsection{Leiden (LUMC) dataset}
 
@@ -216,15 +314,14 @@ LeiClin=LeidenCleanUp(LeiClin)
 Leidata.edit=PreProcess(Leidata, LeiClin[ ,c("ID", "MSI")], 'Lei', c(0.1, 0.6), KER.rm=F)
 @
 
-This set has a larger number of MSI patients (35), and 205 of these patients (with 605 cores) are to be classified as CCS1 vs CCS3.
+This set has a larger number of MSI patients (35), and 205 of these patients (with 605 cores) are to be classified as CMS2/3 vs CMS4.
 
 
 \subsection{TABLE 1: Summary of available Clinical Data}
 
 Below is a table summarising the datasets used, including both clinical parameters and the numbers of patients used in this studying after filtering out poor quality cores.
 
- <<summ_table, child='SummTable.Rnw'>>==
- 
+<<summ_table, child='SummTable.Rnw'>>==
 @
 
 \subsection{FIG S5: Comparison of Clinical Data in TMA cohort}
@@ -240,7 +337,7 @@ Cai2Clin2=Cai2Clin[c(match(unique(Cai2data.edit$PatID$Pat), Cai2Clin$ID), which(
 LeiClin2=LeiClin[c(match(unique(Leidata.edit$PatID$Pat), toupper(LeiClin$ID)), which(LeiClin$MSI=="MSI")), ]
 @
 
-<<echo=FALSE>>==
+<<echo=FALSE, eval=F>>==
 #Sex
 SS[ ,11]=summary(AMCclin2$Sex); SS[ ,12]=round(SS[ ,11]/nrow(AMCclin2)*100)
 SS[ ,13]=summary(Cai1Clin2$Geslacht)[1:2]; SS[ ,14]=round(SS[ ,13]/nrow(Cai1Clin2)*100)
@@ -277,7 +374,7 @@ P53[2:1, 11]=summary(factor(AMCclin2$p53));P53[,12]=round(P53[ ,11]/nrow(AMCclin
 P53[, 17]=summary(factor(LeiClin2$p53_score3));P53[,18]=round(P53[ ,17]/nrow(LeiClin2)*100)
 @
 
-<<FS1, echo=FALSE>>==
+<<FS1, echo=FALSE, eval=F>>==
 par(mfrow=c(2,2))
 names.arg=paste(rep(c("AMC", "CAIRO", "CAIRO2", "LUMC"),2), rep(c("A", "B"), each=4))
 # Plots
@@ -302,7 +399,7 @@ legend("bottomright", c("I", "II", "III", "IV", "NA"), col=c(grey(seq(0, 1, by=0
 
 @
 
-<<FS1mut, echo=FALSE>>==
+<<FS1mut, echo=FALSE, eval=F>>==
 par(mfrow=c(2,2))
 # MSI status
 barplot(MSS[ ,c(seq(2, 8, 2),seq(12, 18, 2))], main="MSS status", 
@@ -359,11 +456,11 @@ tempdata=AMCdata.train$data[, grep("Brown.total.norm", colnames(AMCdata.train$da
  @
  
 
- \subsection{FIG S2: Correlation between CCS and pathologist scored staining}
+ \subsection{FIG S2: Correlation between CMS and pathologist scored staining}
 
- We can also look at the consistency between pathologist scoring and the CCS subtypes:
+ We can also look at the consistency between pathologist scoring and the CMS subtypes:
  
- <<fig.height=6>>==
+<<fig.height=6>>==
 matchPat=match(AMCdata$Pat, AMC.path$Colo)
 matchClass=AMC.path[matchPat, ]
 colnames(matchClass)
@@ -375,8 +472,116 @@ ContTable(table(mC$CCS, mC$HTR2B),"HTR2B staining", T, "HTR2B stain")
 ContTable(table(mC$CCS,mC$Zeb1),"ZEB1 staining", T, "ZEB1 stain")
 @
  
- There is a tendency in CCS3 samples to have higher ZEB1 and CDX2 staining with P values from Chi-sq test less than 0.05, however, not all patient samples display this characteristic. We will need to consider the combination of stains to determine CCS1 from CCS3.
+There is a tendency in CMS4 samples to have higher ZEB1 and CDX2 staining with P values from Chi-sq test less than 0.05, however, not all patient samples display this characteristic. We will need to consider the combination of stains to determine CMS2/3 from CMS4.
  
+How consistent is inter-patholgoist scoring?
+
+<<fig.height=6>>==
+PathScorAMC=read.csv("path_scoring/AMC_3pathologists.csv", header=T)
+#
+PathScorAMC$CCS=AMCclin$Class[match(PathScorAMC$ID, toupper(AMCclin$ID))]
+
+stains=c("CDX2", "HTR2B", "FRMD6", "ZEB1")
+ICCv=rep(NA, 4)
+
+for (i in 1:4){
+  l1=data.matrix(PathScorAMC[ ,grep(stains[i], colnames(PathScorAMC))])
+  ICCv[i]=ICC(l1, missing=F)$results[3, 2]
+}
+
+barplot(t(ICCv), beside=T, ylab="Consistency")
+@
+
+Does the other pathologist scoring show associations between the scores and 
+
+<<fig.height=6, eval=F, echo=F>>==
+par(mfrow=c(2,2))
+
+#PathScorAMC=PathScorAMC[PathScorAMC$CCS!=2, ]
+
+ContTable(table(PathScorAMC$CCS, PathScorAMC$CDX2KT),"CDX2 staining", T ,"CDX2 stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$HTR2BKT),"HTR2B staining", T ,"HTR2B stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$FRMD6KT),"FRMD6 staining", T ,"FRMD6 stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$ZEB1KT),"ZEB1 staining", T ,"ZEB1 stain")
+
+ContTable(table(PathScorAMC$CCS, PathScorAMC$CDX2GO),"CDX2 staining", T ,"CDX2 stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$HTR2BGO),"HTR2B staining", T ,"HTR2B stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$FRMD6GO),"FRMD6 staining", T ,"FRMD6 stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$ZEB1GO),"ZEB1 staining", T ,"ZEB1 stain")
+
+ContTable(table(PathScorAMC$CCS, PathScorAMC$CDX2MJ),"CDX2 staining", T ,"CDX2 stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$HTR2BMJ),"HTR2B staining", T ,"HTR2B stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$FRMD6MJ),"FRMD6 staining", T ,"FRMD6 stain")
+ContTable(table(PathScorAMC$CCS, PathScorAMC$ZEB1MJ),"ZEB1 staining", T ,"ZEB1 stain")
+
+@
+
+\subsection{FIG S2: Morphological associations in the Dataset}
+
+Check for associations between the differentiation state and CMS classification
+
+<<fig.height=4>>==
+par(mfrow=c(1,2))
+
+# check associations between CMS and diff
+ContTable(table(AMCclin$Class, AMCclin$DiffGrade),"CMS", T ,"DiffGrade")
+# also CMS and diff stage
+ContTable(table(AMCclin$DiffGrade[match(PathScorAMC$ID, toupper(AMCclin$ID))],PathScorAMC$CDX2MJ),"DiffGrade", T, "CDX2 stain")
+# ZEB1 and diff?
+ContTable(table(AMCclin$DiffGrade[match(PathScorAMC$ID, toupper(AMCclin$ID))],PathScorAMC$ZEB1MJ),"DiffGrade", T, "ZEB1 stain")
+@
+
+\subsection{FIG S2: Comparison with Legget and Whitehall}
+
+Compare the CMS classification with that conducted by Legget and Whitehall on genomic markers
+
+<<fig.height=4>>==
+WLtable=AMCclin[ ,c("MSIStatus", "Cimpmethylight", "Ras", "BRAF", "Class", "Met", "stage", "Sex")]
+
+# any MSI goes into the same group
+WLtable$MSIStatus[WLtable$MSIStatus=="MSI-L"]="MSI-H"
+WLtable$MSIStatus=factor(WLtable$MSIStatus)
+
+# reorder the CIMP status
+WLtable$Cimpmethylight=factor(WLtable$Cimpmethylight, levels(WLtable$Cimpmethylight)[2:1])
+
+# define the subtypes from Legget and Whitehall
+Norm=which(WLtable$MSIStatus=="MSS" & WLtable$Ras=="WT" & WLtable$BRAF=="WT" & WLtable$Cimpmethylight=="CIMP-")
+Alt=which(WLtable$MSIStatus=="MSS" & WLtable$Ras=="Mut" & WLtable$BRAF=="WT" & WLtable$Cimpmethylight=="CIMP-")
+Serr=which(WLtable$Ras=="WT" & WLtable$BRAF=="MUT" & WLtable$Cimpmethylight=="CIMP+")
+
+WLtable$WLgroup="una"
+WLtable$WLgroup[Norm]="trad"
+WLtable$WLgroup[Alt]="alt"
+WLtable$WLgroup[Serr]="serr"
+
+CCSclass=factor(WLtable$Class)
+levels(CCSclass) = c("skyblue", "palegreen", "darkblue")
+
+WLclass=factor(WLtable$WLgroup)
+levels(WLclass)=brewer.pal(4, "Set1")
+
+levels(WLtable$Met)=c("white","black")
+
+T1=heatmap.plus(t(data.matrix(WLtable[ ,1:4])), col=c("darkblue","grey"), trace="none", 
+             ColSideColors = cbind(as.character(CCSclass), as.character(WLclass), as.character(WLtable$Met)), scale="none")
+
+par(mfrow=c(1,2))
+
+ContTable(table(WLtable$Class, WLtable$WLgroup), "comparison diff", chisqtest = T)
+
+summary(WLtable)
+
+s1=Surv(as.numeric(AMCclin$timeMETRec2), as.numeric(AMCclin$Met))
+plot(survfit(s1~WLgroup, data=WLtable), lwd=2, col=brewer.pal(4, "Set1"),
+      main="AMC set", xlab="time (months)", ylab="Disease Free Survival")
+
+WLtable$WLgroup=factor(WLtable$WLgroup, levels=c("trad", "una", "serr", "alt"))
+
+summary(coxph(s1~WLgroup+Sex+stage, data=WLtable))
+@
+
+
 \subsection{Normalisation strategies}
 
 Look at the distributions of patient samples prior to and after normalisation: 
@@ -411,10 +616,10 @@ Using PCA, the distributions of batches becomes more similar after range scaling
 \section{Training AMC classifier}
  
 \subsection{Random Forest Classification}
-Using the predicted scores from gene expression, we select cores from the CCS1 and CCS3 labelled patients to train a random forest classifier. 
+Using the predicted scores from gene expression, we select cores from the CMS2/3 and CMS4 labelled patients to train a random forest classifier. 
 
 \subsubsection{Training the classifier}
-Firstly, we will test whether the combination of cores per patient predicts the gene expression classification. This will take into the number of cores classified as CCS1 vs CCS3, alongside the probability attained from random forest
+Firstly, we will test whether the combination of cores per patient predicts the gene expression classification. This will take into the number of cores classified as CMS2/3 vs CMS4, alongside the probability attained from random forest
  
  <<fig.width=3, fig.height=4>>==
   # Test the 1 vs 3 classification
@@ -427,12 +632,12 @@ Firstly, we will test whether the combination of cores per patient predicts the 
  rf.TMA <- randomForest(CCS ~ ., data=tdat, importance=TRUE, ntree=1000, proximity=T)
  rf.TMA
  rownames(rf.TMA$votes)=AMCNames
-# Label Patients as CCS2 if MSIpositive  
+# Label Patients as CMS1 if MSIpositive  
 MSIpos=toupper(AMCclin$ID[which(AMCclin$MSI=="MSI" & AMCclin$Class!=3)])
-  # if number of CCS3 cores is greater than or equal to CSS1 cores, label as CSS3
+  # if number of CMS4 cores is greater than or equal to CSS1 cores, label as CSS3
  x2=Compress.Scores(rf.TMA$votes, AMCNames, 2, 0.6)
  x2=rbind(x2, data.frame(Pat=MSIpos, ccs1.count=NA, ccs3.count=NA, certainty=NA, CCS="2"))
-# rename patients which are MSI & CCS3 to CCS2
+# rename patients which are MSI & CMS4 to CMS1
   t1=toupper(AMCclin$ID[which(AMCclin$MSI=="MSI" & AMCclin$Class==3)])
   x2[na.omit(match(t1, x2[ ,1])), 5 ]=2
  r2=table(x2[ ,5], AMCclin$Class[ match(x2[ ,1], toupper(AMCclin$ID))])
@@ -457,13 +662,13 @@ t1=(survfit(s1~factor(x2), data=AMCclin))
 t1
 # Table of numbers at risk
 matrix(summary(t1,times = seq(0, 60, 15))$n.risk, nrow=3, byrow=T,
-       dimnames=list(c("CCS1", "CCS3", "CCS2"), c(seq(0, 60, 15))))
+       dimnames=list(c("CMS2/3", "CMS4", "CMS1"), c(seq(0, 60, 15))))
 # check the coxph model:
 res1=coxph(s1~stage+Sex+factor(x2), data=AMCclin)
 summary(res1)
  @
 
-Prognostic difference between CCS1 and CCS3 patients are observed here.
+Prognostic difference between CMS2/3 and CMS4 patients are observed here.
 
  \subsection{Comparison of robustness}  
 We can compare the robustness of the method by running a classification 200 times, sampling 2/3 of the sample as a training set and 1/3 as a test set. For example, in Random Forest:
@@ -505,9 +710,9 @@ abline(v=t1, col="red")
 
 Note the red line indicates the collapsed prediction accuracy 
 
-\subsection{Comparing AUC ROC curves}
- Using the above predictions, we can compare AUC values in all of the above analyses, given the probabilities of prediction. For example for random forest:
-<<>>==
+%\subsection{Comparing AUC ROC curves}
+%Using the above predictions, we can compare AUC values in all of the above analyses, given the probabilities of prediction. For example for random forest:
+<<eval=F, hide=T, echo=F>>==
 dim(RFout)
 dim(t1)
 x1=prediction(RFout[ ,2], tdat$CCS)
@@ -542,6 +747,52 @@ theme_bw()+theme(legend.position="bottom")+
   ggtitle("Importance of variables")
 @
 
+Can also do this by constructing decision trees using single features?
+
+<<summary_error_bars,cache=T>>==
+ErrRates=matrix(NA, ncol=29, nrow=100)
+
+for (i in 1:28){
+  for (j in 1:100){
+Idx=sample(1:nrow(tdat), round(nrow(tdat)*2/3))
+TrainSet=tdat[Idx,c(i,29) ]
+TestSet=tdat[-Idx,c(i,29) ]
+# Train the classifier
+rf1 = randomForest(CCS ~ ., data=TrainSet, importance=TRUE, ntree=500)
+# Make prediction
+#rfpred =predict(rf1, TestSet, type="response")
+#Acc=table(rfpred, TestSet[ ,ncol(TestSet)])
+#Acc
+ErrRates[j,i]=mean(rf1$err.rate[,1])
+}
+}
+
+ for (j in 1:100){
+Idx=sample(1:nrow(tdat), round(nrow(tdat)*2/3))
+TrainSet=tdat[Idx, ]
+TestSet=tdat[-Idx, ]
+rf1 = randomForest(CCS ~ ., data=TrainSet, importance=TRUE, ntree=500)
+ErrRates[j,29]=mean(rf1$err.rate[,1])
+}
+
+colnames(ErrRates)=colnames(tdat)[1:29]
+
+MeanVals=colMeans(ErrRates[ ,-29])
+
+x1=order(MeanVals)
+
+BplotCols=colnames(ErrRates)
+repNames=cbind(c("FRMD6", "ZEB1", "HTR2B", "CDX2", "KER"), 
+              c("yellow", "pink", "palegreen", "skyblue", "brown"))
+ for (i in 1:5){
+   BplotCols[grep(repNames[ i, 1], BplotCols)]=repNames[ i, 2]
+}
+
+BplotCols[29]="red"
+
+boxplot(ErrRates[ ,c(  x1,29)], horizontal=T, col=c(BplotCols[x1], "red"), xlab="Error Rate", ylab="Stain", las=2)
+@
+\subsection{}
 
 \newpage
 \section{LUMC (Leiden) set}
@@ -581,7 +832,7 @@ t1=survfit(ss~factor(LeiClin$R2))
 t1
 # table of numbers at risk
 matrix(summary(t1,times = seq(0, 60, 15))$n.risk, nrow=3, byrow=T,
-       dimnames=list(c("CCS1", "CCS2", "CCS3"), c(seq(0, 60, 15))))
+       dimnames=list(c("CMS2/3", "CMS1", "CMS4"), c(seq(0, 60, 15))))
 @
 
 \subsubsection{Univariate Analysis}
@@ -629,7 +880,7 @@ C1_R<- predict(rf.TMA, Cai1_range, type="prob")
 C1_RPc=Compress.Scores(C1_R, Cai1data.edit$PatID$Pat, 2, 0.6)
 
 # Quick summary of the results:
-# Number of CCS1 vs CCS3 cores:
+# Number of CMS2/3 vs CMS4 cores:
 summary(C1_R[ ,2]<=0.6)
 # Summary of the patient data:
 summary(factor(C1_RPc[ ,5]))
@@ -657,7 +908,7 @@ t1
 # Table of numbers at risk
 l1=summary(t1,times = seq(0, 45, 15))$n.risk
 matrix(c(l1[1:7], 0, l1[8:11]), nrow=3, byrow=T,
-       dimnames=list(c("CCS1", "CCS2", "CCS3"), c(seq(0, 45, 15))))
+       dimnames=list(c("CMS2/3", "CMS1", "CMS4"), c(seq(0, 45, 15))))
  @
 
 \subsection{Table 2: Univariate Analysis}
@@ -684,36 +935,36 @@ Cai1.Rcox=coxph(ss~Age2+treatment.Arm+Geslacht+factor(R2), data=Cai1Clin)
 summary(Cai1.Rcox)
 @
 
-We see a significant difference between CCS1 and CCS3 patients
+We see a significant difference between CMS2/3 and CMS4 patients
 
-\subsubsection{Fig S3: Compare Treatment Arms for each CCS}
+\subsubsection{Fig S3: Compare Treatment Arms for each CMS}
 
-Given the subtype classification, does the treatment arm have an impact on survival of the CCS1 vs CCS3 subgroups?
+Given the subtype classification, does the treatment arm have an impact on survival of the CMS2/3 vs CMS4 subgroups?
 
  <<Fig4A, fig.height=4>>==
 # Make the plots
 par(mfrow=c(1,2))
 plot(survfit(ss~treatment.Arm, data=Cai1Clin, subset=R2==1),
-      col=c(1), lty=c(1:2),  main=" CCS1", lwd=2, ylab="Overall Survival", xlab="Time (Months)")
+      col=c(1), lty=c(1:2),  main=" CMS2/3", lwd=2, ylab="Overall Survival", xlab="Time (Months)")
 plot(survfit(ss~treatment.Arm, data=Cai1Clin, subset=R2==3),
-      col=c(3),lty=c(1:2), main="CCS3", lwd=2, ylab="Overall Survival", xlab="Time (Months)")
-t1=survfit(ss~R2+treatment.Arm, data=Cai1Clin, subset=R2!=2)
+      col=c(3),lty=c(1:2), main="CMS4", lwd=2, ylab="Overall Survival", xlab="Time (Months)")
+t1=survfit(ss~R2+Geslacht, data=Cai1Clin, subset=R2!=2)
 t1
-# Table of numbers at risk: Note, need to insert a 0 as there are no CCS2 cases at risk at
+# Table of numbers at risk: Note, need to insert a 0 as there are no CMS1 cases at risk at
 matrix(summary(t1,times = seq(0, 45, 15))$n.risk, nrow=4, byrow=T,
-       dimnames=list(c("ArmA_CCS1", "ArmB_CCS1", "ArmA_CCS3", "ArmB_CCS3"), 
+       dimnames=list(c("ArmA_CMS2/3", "ArmB_CMS2/3", "ArmA_CMS4", "ArmB_CMS4"), 
                      c(seq(0, 45, 15))))
 
 # Coxph result:
-# CCS1 patients
+# CMS2/3 patients
 Cai1.Rcox=coxph(ss~Age+treatment.Arm+Geslacht, data=Cai1Clin, subset=R2==1)
 summary(Cai1.Rcox)
-# CCS3 patients
+# CMS4 patients
 Cai3.Rcox=coxph(ss~Age+treatment.Arm+Geslacht, data=Cai1Clin, subset=R2==3)
 summary(Cai3.Rcox)
 @
 
-CCS1 patients display no difference with treatment arm; CCS3 display a mild benefit with treatment B compared to A (combination therapy)
+CMS2/3 patients display no difference with treatment arm; CMS4 display a mild benefit with treatment B compared to A (combination therapy)
 
 Append the information to data frame:
 <<>>==
@@ -745,8 +996,52 @@ Cai1data.edit$PatID$CCS[unlist(PatIdx)]=CCiD
 ContTable(table(Cai1Clin$treatment.Arm, Cai1Clin$OverallBestResponse), "Treatment Response", T, "Overall Best")
   @
 
-It appears in both CCS1 and CCS3, patients are more likely to have a better response in Arm B
+It appears in both CMS2/3 and CMS4, patients are more likely to have a better response in Arm B
 
+\subsection{Comparison with existing subtypes}
+
+As CIMP is not available for this analysis, MSI+ will indicate a CIMP+ class
+
+<<>>==
+WLtable=Cai1Clin[ ,c("KRAS", "BRAF", "MSI", "R2", "Geslacht", "Age", "treatment.Arm")]
+
+# define the subtypes from Legget and Whitehall
+Norm=which(WLtable$MSI=="MSS" & WLtable$KRAS==0 & WLtable$BRAF==0)
+Alt=which(WLtable$MSI=="MSS" & WLtable$KRAS==1 & WLtable$BRAF==0)
+Serr=which(WLtable$KRAS==0 & WLtable$BRAF==1 & WLtable$MSI=="MSI")
+
+WLtable$WLgroup="una"
+WLtable$WLgroup[Norm]="trad"
+WLtable$WLgroup[Alt]="alt"
+WLtable$WLgroup[Serr]="serr"
+
+CCSclass=factor(WLtable$R2)
+levels(CCSclass) = c("skyblue", "palegreen", "darkblue")
+
+WLclass=factor(WLtable$WLgroup)
+levels(WLclass)=brewer.pal(4, "Set1")
+
+WLtable$MSI=-as.numeric(WLtable$MSI)+2
+
+x2=which(is.na(WLtable[ ,1:3]), arr.ind=T)
+
+WLtable=WLtable[-x2[,1], ]
+
+T1=heatmap.plus(t(data.matrix(WLtable[ ,c(1:3)])), col=c("grey", "darkblue"), trace="none", 
+             ColSideColors = cbind(as.character(CCSclass[-x2[ ,1]]), as.character(WLclass[-x2[ ,1]])), scale="none")
+
+par(mfrow=c(1,2))
+
+ContTable(table(WLtable$R2, WLtable$WLgroup), "comparison diff", chisqtest = T)
+
+s1=Surv(as.numeric(Cai1Clin$OS_MONTH), as.numeric(Cai1Clin$OS_event))
+plot(survfit(s1[-x2[ ,1]]~WLgroup, data=WLtable), lwd=2, col=brewer.pal(4, "Set1"),
+      main="AMC set", xlab="time (months)", ylab="Disease Free Survival")
+
+WLtable$WLgroup=factor(WLtable$WLgroup, c("trad", "serr", "una", "alt"))
+summary(coxph(s1[-x2[ ,1]]~WLgroup+Geslacht+Age+treatment.Arm, data=WLtable))
+
+@
 
 \section{Application to the Cairo2 set}
 \subsection{TMA core classification}
@@ -788,31 +1083,31 @@ t1
 #Table of numbers at risk
 l1=summary(t1,times = seq(0, 45, 15))$n.risk
 matrix(c(l1[1:6],0,0,l1[7:10]), nrow=3, byrow=T,
-       dimnames=list(c("CCS1", "CCS2", "CCS3"), c(seq(0, 45, 15))))
+       dimnames=list(c("CMS2/3", "CMS1", "CMS4"), c(seq(0, 45, 15))))
 
 @
 
 
-We see a better prognosis in the CCS1 patients compared to CCS3
+We see a better prognosis in the CMS2/3 patients compared to CMS4
 
 \subsubsection{Univariate Analysis}
 <<C2_Uni>>==
-#summary(coxph(ss~Age, data=Cai2Clin))
 summary(coxph(ss~factor(Sex),data=Cai2Clin))
 summary(coxph(ss~factor(Arm),data=Cai2Clin))
 summary(coxph(ss~factor(MSI),data=Cai2Clin))
 summary(coxph(ss~factor(BRAF),data=Cai2Clin))
 summary(coxph(ss~factor(KRAS_01),data=Cai2Clin))
 summary(coxph(ss~factor(R2),data=Cai2Clin))
+summary(coxph(ss~AgeCat,data=Cai2Clin))
 @
 
 \subsubsection{Multivariate Analysis}
 
 <<>>==
 # Compute the hazards ratio
-Cai2.Rcox=coxph(ss~factor(Sex)+factor(Arm)+factor(R2), data=Cai2Clin) 
+Cai2.Rcox=coxph(ss~factor(Sex)+factor(Arm)+factor(R2)+AgeCat, data=Cai2Clin) 
 summary(Cai2.Rcox)
-Cai2.Rcox=coxph(ss~factor(Sex)+factor(Arm)+factor(R2)+factor(R2)*factor(Arm), data=Cai2Clin) 
+Cai2.Rcox=coxph(ss~factor(Sex)+factor(Arm)+factor(R2)+factor(R2)*factor(Arm)+AgeCat, data=Cai2Clin) 
 summary(Cai2.Rcox)
 @
 
@@ -825,31 +1120,31 @@ par(mfrow=c(2,2))
 # Segregate according to KRAS or BRAF and Treatment Arm
 Cai2Clin$BRAF_KRAS=Cai2Clin$BRAF==1|Cai2Clin$KRAS_01==1
 
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==1)),col=c(1), main="KRAS wt CCS1", lwd=2, lty=c(1:2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==1)),col=c(1), main="KRAS wt CMS2/3", lwd=2, lty=c(1:2))
 legend("topright", c("ArmA", "ArmB"), col=1, lwd=2, lty=c(1, 2), cex=0.75)
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==3)),col=3, main="KRAS wt CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==3)),col=3, main="KRAS wt CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("ArmA", "ArmB"), col=3, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==1)),col=1, main="KRAS mut CCS1", lwd=2,lty=c(1, 2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==1)),col=1, main="KRAS mut CMS2/3", lwd=2,lty=c(1, 2))
 legend("topright", c("ArmA", "ArmB"), col=1, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==3)),col=3, main="KRAS mut CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==3)),col=3, main="KRAS mut CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("ArmA", "ArmB"), col=3, lwd=2, cex=0.75, lty=c(1:2))
 title("Cairo2 treatment based", outer=TRUE)
 mtext("Time (Months)", 1, 3, outer=TRUE)
 mtext("Time (Months)", 2, 3, outer=TRUE)
 
 # Harzard Ratios for wt BRAF/KRAS patients with different treatment arms:
-Cai2.A1=coxph(ss~Arm+Sex, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==1))
+Cai2.A1=coxph(ss~Arm+Sex+Age, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==1))
 summary(Cai2.A1)
-Cai2.A3=coxph(ss~Arm+Sex, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==3))
+Cai2.A3=coxph(ss~Arm+Sex+Age, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2==3))
 summary(Cai2.A3)
-Cai2.B1=coxph(ss~Arm+Sex, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==1))
+Cai2.B1=coxph(ss~Arm+Sex+Age, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==1))
 summary(Cai2.B1)
-Cai2.B3=coxph(ss~Arm+Sex, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==3))
+Cai2.B3=coxph(ss~Arm+Sex+Age, data=Cai2Clin, subset=(BRAF_KRAS==1 & R2==3))
 summary(Cai2.B3)
 
 t1=survfit(ss~Arm+BRAF_KRAS+R2, data=Cai2Clin, subset=(R2!=2))
 t1
-# Table of numbers at risk: note the numbers are Arm/KRASmut/CCS subtype
+# Table of numbers at risk: note the numbers are Arm/KRASmut/CMS subtype
 nameList=c("Arm1_0_1", "Arm1_0_3", "Arm1_1_1", "Arm1_1_3",
                                  "Arm2_0_1", "Arm2_0_3","Arm2_1_1", "Arm2_1_3")
 matrix(summary(t1,times = seq(0, 45, 15))$n.risk, nrow=8, byrow=T,
@@ -862,48 +1157,48 @@ Perform the same type of analysis, focusing on differences in mutation status wi
 <<CetuxTreat, fig.height=8>>==
 par(mfrow=c(2,2))
 # Segregate according to KRAS or BRAF and Treatment Arm
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & R2==1)),col=c(1), main="Cntl Arm CCS1", lwd=2, lty=c(1:2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & R2==1)),col=c(1), main="Cntl Arm CMS2/3", lwd=2, lty=c(1:2))
 legend("topright", c("wt", "mut"), col=1, lwd=2, lty=c(1, 2), cex=0.75)
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & R2==3)),col=3, main="Cntl Arm CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & R2==3)),col=3, main="Cntl Arm CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("wt", "mut"), col=3, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux"& R2==1)),col=1, main="Cetux CCS1", lwd=2,lty=c(1, 2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux"& R2==1)),col=1, main="Cetux CMS2/3", lwd=2,lty=c(1, 2))
 legend("topright", c("wt", "mut"), col=1, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux" & R2==3)),col=3, main="Cetux CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux" & R2==3)),col=3, main="Cetux CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("wt", "mut"), col=3, lwd=2, cex=0.75, lty=c(1:2))
 title("Cairo2 treatment based", outer=TRUE)
 mtext("Time (Months)", 1, 3, outer=TRUE)
 mtext("Time (Months)", 2, 3, outer=TRUE)
 
 # Harzard Ratios for wt BRAF/KRAS patients with different treatment arms:
-Cai2.A1=coxph(ss~BRAF_KRAS+Sex, data=Cai2Clin, subset=(Arm=="wCetux" & R2==1))
+Cai2.A1=coxph(ss~BRAF_KRAS+Sex+Age, data=Cai2Clin, subset=(Arm=="wCetux" & R2==1))
 summary(Cai2.A1)
-Cai2.A3=coxph(ss~BRAF_KRAS+Sex, data=Cai2Clin, subset=(Arm=="wCetux" & R2==3))
+Cai2.A3=coxph(ss~BRAF_KRAS+Sex+Age, data=Cai2Clin, subset=(Arm=="wCetux" & R2==3))
 summary(Cai2.A3)
-Cai2.B1=coxph(ss~BRAF_KRAS+Sex, data=Cai2Clin, subset=(Arm=="cntl" & R2==1))
+Cai2.B1=coxph(ss~BRAF_KRAS+Sex+Age, data=Cai2Clin, subset=(Arm=="cntl" & R2==1))
 summary(Cai2.B1)
-Cai2.B3=coxph(ss~BRAF_KRAS+Sex, data=Cai2Clin, subset=(Arm=="cntl" & R2==3))
+Cai2.B3=coxph(ss~BRAF_KRAS+Sex+Age, data=Cai2Clin, subset=(Arm=="cntl" & R2==3))
 summary(Cai2.B3)
 @
 
 
 
-We see a survival benefit in the CCS1 subtype with  cetuximab in the KRAS wt subgroup, but not in the CCS3 subtype.
+We see a survival benefit in the CMS2/3 subtype with  cetuximab in the KRAS wt subgroup, but not in the CMS4 subtype.
 
-Plot on the same plot the differences in CCS1 vs CCS3
+Plot on the same plot the differences in CMS2/3 vs CMS4
 <<fig.height=4>>==
 par(mfrow=c(1,2))
-plot(survfit(ss~R2+Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2!=2)),col=c(1,1, 3, 3), main="KRAS wt CCS1 vs CC3", lwd=2, lty=c(1:2), xlab="months", ylab="OS")
-legend("topright", c("Arm1_CCS1wt", "Arm2_CCS1wt", "Arm1_CCS3wt", "Arm2_CCS3wt"), 
+plot(survfit(ss~R2+Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2!=2)),col=c(1,1, 3, 3), main="KRAS wt CMS2/3 vs CC3", lwd=2, lty=c(1:2), xlab="months", ylab="OS")
+legend("topright", c("Arm1_CMS2/3wt", "Arm2_CMS2/3wt", "Arm1_CMS4wt", "Arm2_CMS4wt"), 
         lwd=2, cex=0.75, lty=c(1:2), col=c(1,1,3,3))
 Cai2Clin$tIdx=Cai2Clin$BRAF_KRAS==0 & Cai2Clin$R2==1
-plot(survfit(ss~tIdx+Arm, data=Cai2Clin, subset=(R2!=2)),col=c(5,5,1,1), main="KRAS/BRAF wt CCS1 vs All other patients", lwd=2, lty=c(1:2), xlab="months", ylab="OS")
-legend("topright", c( "Arm1_other", "Arm2_other","Arm1_CCS1wt", "Arm2_CCS1wt"), 
+plot(survfit(ss~tIdx+Arm, data=Cai2Clin, subset=(R2!=2)),col=c(5,5,1,1), main="KRAS/BRAF wt CMS2/3 vs All other patients", lwd=2, lty=c(1:2), xlab="months", ylab="OS")
+legend("topright", c( "Arm1_other", "Arm2_other","Arm1_CMS2/3wt", "Arm2_CMS2/3wt"), 
        lwd=2, cex=0.75, lty=c(1:2), col=c(5,5,1,1))
 
 ## Determine the hazards ratios:
-## Test CCS impact on Arm2 in wt patients
+## Test CMS impact on Arm2 in wt patients
 summary(coxph(ss~R2, data=Cai2Clin, subset=(BRAF_KRAS==0 & R2!=2 & Arm=="wCetux"))) 
-## Test CCS1wt Arm2 with the Arm2 Other
+## Test CMS2/3wt Arm2 with the Arm2 Other
 summary(coxph(ss~tIdx, data=Cai2Clin, subset=(R2!=0 & Arm=="wCetux")))
 ## Test Other Arm1 vs Arm2:
 summary(coxph(ss~Arm, data=Cai2Clin, subset=(tIdx==0 & R2!=2)))
@@ -951,6 +1246,51 @@ PatIdx=sapply(C2_R2[ ,1], function(x) grep(sprintf("^%s$", x), Cai2data.edit$Pat
 PatL=unlist(lapply( PatIdx,length))
 CCiD=rep(C2_R2[ ,5], times=PatL)
 Cai2data.edit$PatID$CCS[unlist(PatIdx)]=CCiD
+@
+
+\subsection{Comparison with existing subtypes}
+
+As CIMP is not available for this analysis, MSI+ will indicate a CIMP+ class
+
+<<>>==
+WLtable=Cai2Clin[ ,c("KRAS_01", "BRAF", "MSI", "R2", "Age", "Arm", "Sex")]
+
+# define the subtypes from Legget and Whitehall
+Norm=which(WLtable$MSI=="MSS" & WLtable$KRAS_01==0 & WLtable$BRAF==0)
+Alt=which(WLtable$MSI=="MSS" & WLtable$KRAS_01==1 & WLtable$BRAF==0)
+Serr=which(WLtable$KRAS_01==0 & WLtable$BRAF==1 & WLtable$MSI=="MSI")
+
+WLtable$WLgroup="una"
+WLtable$WLgroup[Norm]="trad"
+WLtable$WLgroup[Alt]="alt"
+WLtable$WLgroup[Serr]="serr"
+
+CCSclass=factor(WLtable$R2)
+levels(CCSclass) = c("skyblue", "palegreen", "darkblue")
+
+WLclass=factor(WLtable$WLgroup)
+levels(WLclass)=brewer.pal(4, "Set1")
+
+x2=which(is.na(WLtable[ ,c(1:4)]), arr.ind=T)
+
+WLtable$MSI=-as.numeric(WLtable$MSI)+1
+
+WLtable=WLtable[-x2[ ,1], ]
+
+T1=heatmap.plus(t(data.matrix(WLtable[ ,1:3])), col=c("grey","darkblue"), trace="none", 
+             ColSideColors = cbind(as.character(CCSclass[-x2[ ,1]]), as.character(WLclass[-x2[ ,1]])), scale="none")
+
+par(mfrow=c(1,2))
+
+ContTable(table(WLtable$R2, WLtable$WLgroup), "comparison diff", chisqtest = T)
+
+s1=Surv(as.numeric(Cai2Clin$OS_month), as.numeric(Cai2Clin$OS_event))
+plot(survfit(s1[-x2[ ,1]]~WLgroup, data=WLtable), lwd=2, col=brewer.pal(4, "Set1"),
+      main="AMC set", xlab="time (months)", ylab="Disease Free Survival")
+
+WLtable$WLgroup=factor(WLtable$WLgroup, c("trad", "serr", "una", "alt"))
+summary(coxph(s1[-x2[ ,1]]~WLgroup+Sex+Age+Arm, data=WLtable))
+
 @
 
 \section{Pathologist-Friendly Classifier}
@@ -1013,8 +1353,6 @@ abline(h=c(235), col="red")
 
 Using these values, construct a pathologist friendly classifier:
 
-
-
 <<fig.height=8>>==
 tdat3=tdat2
 tdat3$CDX2_StainInt=AMC.path$CDX2[match(AMCdata.train$PatID$Pat, toupper(AMC.path$Colo))]
@@ -1038,8 +1376,6 @@ rf.test
 # save the classifier for use in shiny
 save(rf.test, file="classifier.RData") 
 @
-
-
 
 \subsection{Fig4: Test on the CAIRO2 set}
 
@@ -1090,7 +1426,7 @@ summary(C2_Acat)
 # table per core level
 table(C2_R2cat, C2_Acat[match(Cai2data.edit$PatID$Pat, PathCairo2$Pat)])
 
-# table per patient level: add in CCS2 patients
+# table per patient level: add in CMS1 patients
 msiIdx=Cai2Clin$ID[which(Cai2Clin$MSI=="MSI")]
 C2_A2=C2_A2[-na.omit(match(msiIdx, C2_A2[ ,1])), ]
 C2_A2=rbind(C2_A2, matrix(NA, ncol=5, nrow=8))
@@ -1102,6 +1438,8 @@ table(C2_R2[ ,5], C2_A2[match(C2_R2[ ,1], C2_A2[ ,1]),5])
 
 ContTable(table(C2_R2[ ,5], C2_A2[match(C2_R2[ ,1], C2_A2[ ,1]),5]), "Patient Classification", chisqtest = T, 
           "automated")
+
+write.csv(C2_A2, file=sprintf("Cairo2_Classes_pathscore%s.csv", Sys.Date()))
 @
 
 survival analysis:
@@ -1120,48 +1458,48 @@ plot(survfit(ss[Cai2Clin$BRAF_KRAS==1]~Pcat[Cai2Clin$BRAF_KRAS==1], data=Cai2Cli
 t1=survfit(ss~Pcat, data=Cai2Clin)
 l1=summary(t1,times = seq(0, 60, 15))$n.risk
 matrix(c(l1[1:4],0, l1[5:6],0,0,0, l1[7:10],0), nrow=3, byrow=T,
-       dimnames=list(c("CCS1","CCS2", "CCS3"), c(seq(0, 60, 15))))
+       dimnames=list(c("CMS2/3","CMS1", "CMS4"), c(seq(0, 60, 15))))
 
 
 # calculate P value
-summary(coxph(ss~factor(Pcat)+Sex+Arm, data=Cai2Clin))
+summary(coxph(ss~factor(Pcat)+Sex+Arm+Age, data=Cai2Clin))
 
 par(mfrow=c(2,2))
 ## Reproduce BRAF/KRAS vs CMS
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & Pcat==1)),col=c(1), main="KRAS wt CCS1", lwd=2, lty=c(1:2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & Pcat==1)),col=c(1), main="KRAS wt CMS2/3", lwd=2, lty=c(1:2))
 legend("topright", c("ArmA", "ArmB"), col=1, lwd=2, lty=c(1, 2), cex=0.75)
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & Pcat==3)),col=3, main="KRAS wt CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==0 & Pcat==3)),col=3, main="KRAS wt CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("ArmA", "ArmB"), col=3, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & Pcat==1)),col=1, main="KRAS mut CCS1", lwd=2,lty=c(1, 2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & Pcat==1)),col=1, main="KRAS mut CMS2/3", lwd=2,lty=c(1, 2))
 legend("topright", c("ArmA", "ArmB"), col=1, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & Pcat==3)),col=3, main="KRAS mut CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~Arm, data=Cai2Clin, subset=(BRAF_KRAS==1 & Pcat==3)),col=3, main="KRAS mut CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("ArmA", "ArmB"), col=3, lwd=2, cex=0.75, lty=c(1:2))
 
 par(mfrow=c(2,2))
 ## Reproduce Arm vs CMS
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & Pcat==1)),col=c(1), main="Cntl CCS1", lwd=2, lty=c(1:2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & Pcat==1)),col=c(1), main="Cntl CMS2/3", lwd=2, lty=c(1:2))
 legend("topright", c("wt", "mut"), col=1, lwd=2, lty=c(1, 2), cex=0.75)
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & Pcat==3)),col=3, main="Cntl CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="cntl" & Pcat==3)),col=3, main="Cntl CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("wt", "mut"), col=3, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux" & Pcat==1)),col=1, main="cetux CCS1", lwd=2,lty=c(1, 2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux" & Pcat==1)),col=1, main="cetux CMS2/3", lwd=2,lty=c(1, 2))
 legend("topright", c("wt", "mut"), col=1, lwd=2, cex=0.75, lty=c(1:2))
-plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux" & Pcat==3)),col=3, main="cetux CCS3", lwd=2,lty=c(1, 2))
+plot(survfit(ss~BRAF_KRAS, data=Cai2Clin, subset=(Arm=="wCetux" & Pcat==3)),col=3, main="cetux CMS4", lwd=2,lty=c(1, 2))
 legend("topright", c("wt", "mut"), col=3, lwd=2, cex=0.75, lty=c(1:2))
 
 summary(coxph(ss[which(Cai2Clin$Arm=="wCetux" & Cai2Clin$Pcat==1)]~BRAF_KRAS, data=subset(Cai2Clin, Arm=="wCetux" & Pcat==1)))
 
 summary(coxph(ss[which(Cai2Clin$BRAF_KRAS==0 & Cai2Clin$Pcat==1)]~Arm, data=subset(Cai2Clin, BRAF_KRAS==0 & Pcat==1)))
 
-summary(coxph(ss~factor(Pcat)+Sex+Arm, data=Cai2Clin))
+summary(coxph(ss~factor(Pcat)+Sex+Arm+Age, data=Cai2Clin))
 
 ## ALSO! test the Cairo2 wt patients w cetux to see if there is a difference:
 Cai2Clin$tIdx=Cai2Clin$BRAF_KRAS==0 & Cai2Clin$Pcat=="1"
-plot(survfit(ss~Pcat+Arm, data=Cai2Clin, subset=(BRAF_KRAS==0)), col=c(1,1,2,2,3,3),main="KRASwt CCS1 vs all KRAS wt", lwd=2,lty=1:2, xlab="months", ylab="OS")
-legend("topright", c("Arm1_CCS1wt", "Arm2_CCS1wt", "Arm1_CCS3wt", "Arm2_CCS3wt"), 
+plot(survfit(ss~Pcat+Arm, data=Cai2Clin, subset=(BRAF_KRAS==0)), col=c(1,1,2,2,3,3),main="KRASwt CMS2/3 vs all KRAS wt", lwd=2,lty=1:2, xlab="months", ylab="OS")
+legend("topright", c("Arm1_CMS2/3wt", "Arm2_CMS2/3wt", "Arm1_CMS4wt", "Arm2_CMS4wt"), 
         lwd=2, cex=0.75, lty=c(1:2), col=c(1,1,3,3))
-plot(survfit(ss~tIdx+Arm, data=Cai2Clin), col=c(5,5,1,1),main="KRASwt CCS1 vs all other", lwd=2,
+plot(survfit(ss~tIdx+Arm, data=Cai2Clin), col=c(5,5,1,1),main="KRASwt CMS2/3 vs all other", lwd=2,
      lty=1:2, xlab="months", ylab="OS")
-legend("topright", c("Arm1_other", "Arm2_other","Arm1_CCS1wt", "Arm2_CCS1wt" ), 
+legend("topright", c("Arm1_other", "Arm2_other","Arm1_CMS2/3wt", "Arm2_CMS2/3wt" ), 
        lwd=2, cex=0.75, lty=c(1:2), col=c(5,5,1,1))
 
 # Summary of the dataset:
@@ -1172,10 +1510,10 @@ nameList=c("ArmA_wt_1", "ArmA_wt_3", "ArmA_mt_1", "ArmA_mt_3",
 matrix(summary(t1,times = seq(0, 45, 15))$n.risk, nrow=8, byrow=T,
        dimnames=list(nameList, c(seq(0, 45, 15))))
 
-## Survival: Compare in cetux arm group CCS1 BRAF wt vs all
-summary(coxph(ss~tIdx, data=Cai2Clin, subset=(Arm=="wCetux")))
-## Survival: Compare in BRAS/KRAS wt group CCS1 vs all
-summary(coxph(ss~tIdx+Sex, data=Cai2Clin, subset=(BRAF_KRAS==0)))
+## Survival: Compare in cetux arm group CMS2/3 BRAF wt vs all
+summary(coxph(ss~tIdx+Sex+Age, data=Cai2Clin, subset=(Arm=="wCetux")))
+## Survival: Compare in BRAS/KRAS wt group CMS2/3 vs all
+summary(coxph(ss~tIdx+Sex+Age, data=Cai2Clin, subset=(BRAF_KRAS==0)))
 @
 
 
@@ -1197,10 +1535,7 @@ barplot(PD, names.arg=c("AMC", "Cairo", "Cairo2", "LUMC"), las=2, col=c(1:3),
         ylab="Fraction of Classified Patients")
 @
 
-
-
 \subsection{Fig 2B Summary of the Stains}
-
 
 
 <<fig.height=4>>==
@@ -1250,6 +1585,53 @@ s3d$points3d(c(0, 7*Pmat[2,3]),c(0, 7*Pmat[2,2]), c(0, 7*Pmat[2,1]), col="green"
 s3d$points3d(c(0, 7*Pmat[3,3]),c(0, 7*Pmat[3,2]), c(0, 7*Pmat[3,1]), col="yellow", lwd=2, lty=5, type="l")
 s3d$points3d(c(0, 7*Pmat[4,3]),c(0, 7*Pmat[4,2]), c(0, 7*Pmat[4,1]), col="red", lwd=2,lty=5, type="l")
 @ 
+
+
+%\subsection{standardisation of data}
+<<eval=F, echo=F>>==
+library(ggplot2)
+
+tempdat=data.frame(rbind(cbind(AMC_raw[, grep("total.norm", colnames(AMC_raw))], Samp="AMC"), 
+                         cbind(Lei_range[, grep("total.norm", colnames(Lei_range))], Samp="Lei"),
+                         cbind(Cai1_range[, grep("total.norm", colnames(Cai1_range))], Samp="Cai1"), 
+                         cbind(Cai2_range[, grep("total.norm", colnames(Cai2_range))], Samp="Cai2")))
+qplot(Samp,as.numeric(as.character(CDX2_Brown.total.norm)), data=tempdat)+geom_boxplot()
+
+tempdat=data.frame(rbind(cbind(AMC_raw[, grep("StainInt", colnames(AMC_raw))], Samp="AMC"), 
+                         cbind(Lei_range[, grep("StainInt", colnames(Lei_range))], Samp="Lei"),
+                         cbind(Cai1_range[, grep("StainInt", colnames(Cai1_range))], Samp="Cai1"), 
+                         cbind(Cai2_range[, grep("StainInt", colnames(Cai2_range))], Samp="Cai2")))
+qplot(Samp,as.numeric(as.character(CDX2_StainInt)), data=tempdat)+geom_boxplot()
+
+tempdat=data.frame(rbind(cbind(AMC_raw[, grep("StAreaFrac", colnames(AMC_raw))], Samp="AMC"), 
+                         cbind(Lei_range[, grep("StAreaFrac", colnames(Lei_range))], Samp="Lei"),
+                         cbind(Cai1_range[, grep("StAreaFrac", colnames(Cai1_range))], Samp="Cai1"), 
+                         cbind(Cai2_range[, grep("StAreaFrac", colnames(Cai2_range))], Samp="Cai2")))
+qplot(Samp,as.numeric(as.character(CDX2_StAreaFrac)), data=tempdat)+geom_boxplot()
+
+
+## raw samples
+AMC_raw=AMCdata.train$data[, -grep("Im", colnames(AMCdata.train$data))]
+tempdat=data.frame(rbind(cbind(AMC_raw[, grep("total.norm", colnames(AMC_raw))], Samp="AMC"), 
+                         cbind(Lei_raw[, grep("total.norm", colnames(Lei_raw))], Samp="Lei"),
+                         cbind(Cai1_raw[, grep("total.norm", colnames(Cai1_raw))], Samp="Cai1"), 
+                         cbind(Cai2_raw[, grep("total.norm", colnames(Cai2_raw))], Samp="Cai2")))
+qplot(Samp,as.numeric(as.character(CDX2_Brown.total.norm)), data=tempdat)+geom_boxplot()
+
+
+tempdat=data.frame(rbind(cbind(AMC_raw[, grep("StainInt", colnames(AMC_raw))], Samp="AMC"), 
+                         cbind(Lei_raw[, grep("StainInt", colnames(Lei_raw))], Samp="Lei"),
+                         cbind(Cai1_raw[, grep("StainInt", colnames(Cai1_raw))], Samp="Cai1"), 
+                         cbind(Cai2_raw[, grep("StainInt", colnames(Cai2_raw))], Samp="Cai2")))
+qplot(Samp,as.numeric(as.character(CDX2_StainInt)), data=tempdat)+geom_boxplot()
+
+tempdat=data.frame(rbind(cbind(AMC_raw[, grep("StAreaFrac", colnames(AMC_raw))], Samp="AMC"), 
+                         cbind(Lei_raw[, grep("StAreaFrac", colnames(Lei_raw))], Samp="Lei"),
+                         cbind(Cai1_raw[, grep("StAreaFrac", colnames(Cai1_raw))], Samp="Cai1"), 
+                         cbind(Cai2_raw[, grep("StAreaFrac", colnames(Cai2_raw))], Samp="Cai2")))
+qplot(Samp,as.numeric(as.character(CDX2_StAreaFrac)), data=tempdat)+geom_boxplot()
+
+@
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
