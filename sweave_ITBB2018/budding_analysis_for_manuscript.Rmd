@@ -1,0 +1,981 @@
+---
+title: "Supplementary Information for Intra-tumoral Budding"
+author: "Trinh et al"
+date: "20/2/2018"
+output:
+  html_document:
+    toc: true
+  # md_document:
+  #   variant: markdown_github
+  #   toc: true
+---
+
+This document contains the code used to generate plots and conduct statistical analysis for **Tumor budding is associated with the mesenchymal colon cancer subtype and RAS/RAF mutations: a study of 1525 colorectal cancers with Consensus Molecular Subgroup (CMS) data**
+
+# Data: Summary of the cohort(s) of interest
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, fig.height = 4.5, message=F, warning=F)
+knitr::knit_hooks$set(inline = as.character)
+library(RColorBrewer)
+library(forestplot)
+source("AnnotateCohorts.R")
+library(ggplot2)
+library(survival)
+
+ggPlotFun=function(fit, data,title){
+library(survminer)
+ggsurvplot(fit, data, risk.table = T,pval=T, linetype = "strata", palette = c("black", "blue","red","black", "blue", "red"), ggtheme = theme(panel.grid.major = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black")), title=title, break.time.by = 10, font.tickslab = 10
+)
+}
+
+library(gridExtra)
+```
+
+Four cohorts were used in this study: CAIRO, CAIRO2, LUMC and AMC. Here, we load the clinical information and budding information for each cohort:
+
+```{r}
+# clinical
+Cai1Clin=read.csv("../Clinical/Cairo1_Survival_data.csv")
+Cai1Clin=Cairo1Edit(Cai1Clin)
+Cai1Clin$KRAS_BRAF=factor(ifelse(Cai1Clin$KRAS==1|Cai1Clin$BRAF==1, 1,0))
+Cai1map=AllPatList("../mapping_Cairo1/", Marker = "Panker")
+
+# Cai1 budding information
+
+Cai1Buds=read.csv("CAIRO2_set_collapsed.csv")
+Cai1Buds$T5=cut(Cai1Buds$Count, c(-1, 5, 1000),c("<5","5+"))
+Cai1Buds$Samp=paste(Cai1Buds$SlideNo, Cai1Buds$Row, Cai1Buds$Col)
+Cai1map$Samp=paste(Cai1map$Aperio, Cai1map$Row, Cai1map$Col)
+Cai1Buds$Pat=Cai1map$values[match(Cai1Buds$Samp, Cai1map$Samp)]
+Cai1Buds=Cai1Buds[-which(Cai1Buds$Pat=="Lever"|Cai1Buds$Pat=="x"), ]
+Cai1Buds=Cai1Buds[-which(is.na(Cai1Buds$Count)), ]
+```
+
+
+```{r}
+LeiClin=read.csv("../Clinical/LeidenClinical.csv", header=T)
+LeiClin=LeidenCleanUp(LeiClin)
+LeiClin$ID=toupper(LeiClin$ID)
+Lei1map=AllPatList("../mapping_Leiden/", Marker = "Panker")
+
+LUMCBuds=read.csv("LUMC_budding_scores.csv")
+LUMCBuds$T5=cut(LUMCBuds$Count, c(-1, 5, 1000),c("<5","5+"))
+LUMCBuds$Samp=paste(LUMCBuds$Slide, LUMCBuds$Row, LUMCBuds$Col)
+Lei1map$Samp=paste(Lei1map$Aperio, Lei1map$Row, Lei1map$Col)
+LUMCBuds$Pat=Lei1map$values[match(LUMCBuds$Samp, Lei1map$Samp)]
+LUMCBuds=LUMCBuds[-which(LUMCBuds$Pat=="."|LUMCBuds$Pat==""|LUMCBuds$Pat=="x"), ]
+temp=strsplit(LUMCBuds$Pat, " ")
+LUMCBuds$Pat2=unlist(lapply(temp, function(x) x[1]))
+LUMCBuds$TMAName=Lei1map$SlideName[match(LUMCBuds$Samp, Lei1map$Samp)]
+LUMCBuds=LUMCBuds[-which(LUMCBuds$Pat2=="Colon"|LUMCBuds$Pat2=="Milt"|LUMCBuds$Pat2=="Lever"|LUMCBuds$Pat2=="?"), ]
+```
+
+
+```{r}
+Cai2Clin=read.csv("../Clinical/Cairo2_clinical.csv")
+Cai2Clin=EditCairo2Clin(Cai2Clin)
+Cai2Clin$KRAS_BRAF=Cai2Clin$KRAS_01==1|Cai2Clin$BRAF==1
+
+Cai2Buds=read.csv("Colon_buds_scoring.csv", header=T)
+Cai2Buds$Samp=substr(Cai2Buds$X, 1, 4)
+Cai2Buds$Image=substr(Cai2Buds$X, 10, 11)
+Cai2Buds$Image=gsub("\\.", "", Cai2Buds$Image)
+Cai2Buds$Samp=paste(Cai2Buds$Samp, Cai2Buds$Image, sep="_")
+# align the data with pat samples or IDs
+Cai2map=AllPatList("../mapping_Cairo2/", Marker = "Panker")
+Cai2map$Samp=paste("R", Cai2map$Row, "C",
+                   Cai2map$Col,"_", Cai2map$SlideNo, sep="")
+imData=read.csv("Cai2_image_data.csv", header=T)
+Cai2Buds$Pat=Cai2map$values[match(Cai2Buds$Samp, Cai2map$Samp)]
+```
+
+
+```{r}
+AMCscore=read.csv("AMC_HE_Scorings.csv")
+
+AMCclin=read.csv("../Clinical/AMCclinical.csv")
+AMCclin$ID=toupper(AMCclin$ID)
+
+AMCClinNew=merge(AMCclin, AMCscore, by.x="ID", by.y="ID")
+AMCClinNew$KRAS_BRAF=AMCClinNew$Ras=="Mut"|AMCClinNew$BRAF=="MUT"
+AMCClinNew$T5=cut(AMCClinNew$Budding.ITBCC, c(-1, 5, 1000),c("<5","10+"))
+AMCClinNew$timeMonths=AMCClinNew$timeMETRec/30.25
+AMCClinNew$Met2=AMCClinNew$Met
+AMCClinNew$Met2[AMCClinNew$timeMonths>60]="no"
+AMCClinNew$timeMonths[AMCClinNew$timeMonths>60]=60
+
+AMCClinNew=AMCClinNew[-which(is.na(AMCClinNew$Budding.ITBCC)), ]
+```
+
+
+## Budding distribution
+
+Feature | CAIRO | LUMC | CAIRO2 |AMC
+--------|-------|------|--------|------
+Mean no. buds|`r round(mean(Cai1Buds$Count, na.rm=T)*100)/100` |`r round(mean(LUMCBuds$Count, na.rm=T)*100)/100` | `r round(mean(Cai2Buds$no.of.buds)*100)/100`| `r round(mean(AMCscore$Budding.ITBCC, na.rm=T)*100)/100`
+SD|`r round(sd(Cai1Buds$Count, na.rm=T)*100)/100` |`r round(sd(LUMCBuds$Count, na.rm=T)*100)/100` | `r round(sd(Cai2Buds$no.of.buds)*100)/100`|`r round(sd(AMCClinNew$Budding.ITBCC, na.rm=T)*100)/100`
+Median|`r median(Cai1Buds$Count, na.rm=T)` |`r median(LUMCBuds$Count, na.rm=T)` | `r median(Cai2Buds$no.of.buds)`|`r median(AMCClinNew$Budding.ITBCC, na.rm=T)`
+Min no. buds|`r min(Cai1Buds$Count, na.rm=T)` |`r min(LUMCBuds$Count, na.rm=T)` | `r min(Cai2Buds$no.of.buds)`|`r min(AMCClinNew$Budding.ITBCC, na.rm=T)`
+Max no buds|`r max(Cai1Buds$Count, na.rm=T)` |`r max(LUMCBuds$Count, na.rm=T)` | `r max(Cai2Buds$no.of.buds)`|`r max(AMCClinNew$Budding.ITBCC, na.rm=T)`
+Count <=5 | `r length(which(Cai1Buds$Count<=5))` | `r length(which(LUMCBuds$Count<=5))`|`r length(which(Cai2Buds$no.of.buds<=5))`| `r length(which(AMCClinNew$Budding.ITBCC<=5))`  
+Count >5 |`r length(which(Cai1Buds$Count>5))` | `r length(which(LUMCBuds$Count>5))`|`r length(which(Cai2Buds$no.of.buds>5))`  | `r length(which(AMCClinNew$Budding.ITBCC>5))` 
+No samples|`r length(na.omit(Cai1Buds$Count))` |`r length(na.omit(LUMCBuds$Count))` | `r length(na.omit(Cai2Buds$no.of.buds))`| `r length(na.omit(AMCscore$Budding.ITBCC))` 
+No patients|`r length(unique(Cai1Buds$Pat[!is.na(Cai1Buds$Count)]))`| `r length(unique(LUMCBuds$Pat))` | `r length(unique(Cai2Buds$Pat))`| `r length(unique(AMCscore$ID[!is.na(AMCscore$Budding.ITBCC)]))` 
+Mean no cores per patient| `r round(length(na.omit(Cai1Buds$Count))/length(unique(Cai1Buds$Pat[!is.na(Cai1Buds$Count)]))*100)/100`| `r round(length(na.omit(LUMCBuds$Count))/length(unique(LUMCBuds$Pat))*100)/100`| `r round(length(na.omit(Cai2Buds$no.of.buds))/length(unique(Cai2Buds$Pat))*100)/100` | `r round(length(na.omit(AMCscore$Budding.ITBCC))/length(unique(AMCscore$ID[!is.na(AMCscore$Budding.ITBCC)]))*100)/100` 
+
+Below are plots showing the distribution of buds in each data set:
+
+```{r, fig.height=6}
+par(mfrow=c(2,2))
+
+hist(Cai1Buds$Count, main="CAIRO1", xlab = "no buds")
+hist(LUMCBuds$Count, main="LUMC", xlab = "no buds")
+hist(Cai2Buds$no.of.buds, main="CAIRO2", xlab = "no buds")
+hist(AMCscore$Budding.ITBCC, main="AMC", xlab="no buds")
+```
+
+
+
+```{r}
+# for samples which have more than 1 score, take the average as the new count
+dupidx=Cai1Buds$Pat[which(duplicated(Cai1Buds$Pat))]
+MeanNo=sapply(dupidx, function(x) mean(Cai1Buds$Count[which(Cai1Buds$Pat==x)]))
+rmidx=which(duplicated(Cai1Buds$Pat))
+Cai1Buds$Count[match(dupidx, Cai1Buds$Pat)]=MeanNo
+Cai1Buds$T5=cut(Cai1Buds$Count, c(-1, 5, 1000),c("<5","5+"))
+Cai1Buds=Cai1Buds[-rmidx, ]
+Cai1ClinNew=merge(Cai1Clin, Cai1Buds, by.x="ID", by.y="Pat")
+```
+
+
+
+```{r}
+dupidx=Cai2Buds$Pat[which(duplicated(Cai2Buds$Pat))]
+MeanNo=sapply(dupidx, function(x) mean(Cai2Buds$no.of.buds[which(Cai2Buds$Pat==x)]))
+rmidx=which(duplicated(Cai2Buds$Pat))
+Cai2Buds$no.of.buds[match(dupidx, Cai2Buds$Pat)]=MeanNo
+Cai2Buds$T5=cut(Cai2Buds$no.of.buds, c(-1, 5, 1000),c("<5","5+"))
+Cai2Buds=Cai2Buds[-rmidx, ]
+Cai2ClinNew=merge(Cai2Clin, Cai2Buds[ , -c(1:2)], by.x="ID", by.y="Pat")
+#Cai2ClinNew=Cai2ClinNew[-which(is.na(Cai2ClinNew$no.of.buds)), ]
+```
+
+Note that the LUMC cohort where between 1-5 cores are available for each patient: We can compute the mean number of buds per sample and plot the variation vs mean value to look at the consistency between cores:
+
+```{r}
+LUMCBudsN=LUMCBuds[which(!is.na(LUMCBuds$Count)), ]
+m2=which(duplicated(LUMCBudsN$Pat2))
+LUMCBudMean=stack(by(LUMCBudsN$Count, LUMCBudsN$Pat2, mean))
+LUMCBudMax=stack(by(LUMCBudsN$Count, LUMCBudsN$Pat2, max))
+LUMCBudSD=stack(by(LUMCBudsN$Count, LUMCBudsN$Pat2,sd))
+
+par(mfrow=c(1,2))
+
+plot(LUMCBudMean$values, LUMCBudSD$values, xlab="mean count", ylab="variation")
+abline(0,1)
+barplot(table(table(LUMCBudsN$Pat2)), main="no cores per patient")
+
+LUMCBudsNew=data.frame(Pat=LUMCBudMean$ind, mean=LUMCBudMean$values, max=LUMCBudMax$values, sd=LUMCBudSD$values,TMA=LUMCBuds$TMAName[match(LUMCBudMean$ind, LUMCBuds$Pat2)], Nscored=table(LUMCBudsN$Pat2))
+
+LUMCBudsNew$T5=cut(LUMCBudsNew$mean, c(-1, 5, 1000),c("<5","5+"))
+
+LeiClinNew=merge(LeiClin, LUMCBudsNew, by.x="ID", by.y="Pat")
+#LeiClinNew=LeiClinNew[-which(is.na(LeiClinNew$mean)), ]
+```
+
+
+```{r, eval=F}
+summary(LeiClinNew)
+summary(Cai1ClinNew)
+summary(Cai2ClinNew)
+```
+
+## clincal characteristics
+
+Below is a summary of the clinical characteristics of the cohorts for which there is budding information. This is summarised in **Table 1**
+
+Feature | | CAIRO | LUMC | CAIRO2 | AMC
+-------|-|-------|------|--------|--------
+No patients w budding| |`r length(unique(Cai1Buds$Pat))`| `r length(unique(LUMCBuds$Pat))` | `r length(unique(Cai2Buds$Pat))`|`r length(unique(AMCClinNew$ID))`
+Sample Information | TMA or slide | TMA| TMA|TMA| whole slide
+- |core diameter |2mm|0.6mm|2mm|-
+- |staining| CK|CK|CK|H\&E 
+Age | | `r round(mean(Cai1ClinNew$Age)*100)/100` | `r round(mean(LeiClinNew$AgeOperation)*100)/100` |`r round(mean(Cai2ClinNew$Age, na.rm=T)*100)/100` |
+Sex | Female | `r length(which(Cai1ClinNew$Geslacht=="F"))` |`r length(which(LeiClinNew$Sex=="female"))` |`r length(which(Cai2ClinNew$Sex=="F"))`|`r length(which(AMCClinNew$Sex=="F"))`
+- |Male | `r length(which(Cai1ClinNew$Geslacht=="M"))` |`r length(which(LeiClinNew$Sex=="male"))` |`r length(which(Cai2ClinNew$Sex=="M"))`|`r length(which(AMCClinNew$Sex=="M"))`
+Stage | 1|0| `r length(which(LeiClinNew$TNM==1))` |0 |0
+- |2|0| `r length(which(LeiClinNew$TNM==2))`|0|`r length(unique(AMCClinNew$ID))`
+- |3|0|`r length(which(LeiClinNew$TNM==3))`|0|0
+- |4| `r nrow(Cai1ClinNew)` | `r length(which(LeiClinNew$TNM==4))`| `r nrow(Cai2ClinNew)`|0
+Event Status | none | `r length(which(Cai1ClinNew$OS_event==0))`|`r length(which(LeiClinNew$DFS_event==0))`|`r length(which(Cai2ClinNew$OS_event==0))`|`r length(which(AMCClinNew$Met2=="no"))`
+ -| yes |`r length(which(Cai1ClinNew$OS_event==1))`|`r length(which(LeiClinNew$DFS_event==1))`| `r length(which(Cai2ClinNew$OS_event==1))`|`r length(which(AMCClinNew$Met2=="yes"))`
+Treatment Arm | A|`r length(which(Cai1ClinNew$treatment.Arm=="ArmA"))`|-| `r length(which(Cai2ClinNew$Arm=="cntl"))`|-
+Treatment Arm | B|`r length(which(Cai1ClinNew$treatment.Arm=="ArmB"))`|-| `r length(which(Cai2ClinNew$Arm=="wCetux"))`|-
+Mutational Information | | | | |
+MSI | pos | `r length(which(Cai1ClinNew$MSI=="MSI"))` | `r length(which(LeiClinNew$MSI=="MSI"))`| `r length(which(Cai2ClinNew$MSI=="MSI"))` |`r length(which(AMCClinNew$MSI=="MSI"))`
+-| neg |  `r length(which(Cai1ClinNew$MSI=="MSS"))`| `r length(which(LeiClinNew$MSI=="MSS"))`| `r length(which(Cai2ClinNew$MSI=="MSS"))` |`r length(which(AMCClinNew$MSI=="MSS"))`
+KRAS | mut | `r length(which(Cai1ClinNew$KRAS==1))` | NA |`r length(which(Cai2ClinNew$KRAS_01==1))` |`r length(which(AMCClinNew$Ras=="Mut"))`
+- | wt | `r length(which(Cai1ClinNew$KRAS==0))` |NA | `r length(which(Cai2ClinNew$KRAS_01==0))`|`r length(which(AMCClinNew$Ras=="WT"))`
+BRAF | mut | `r length(which(Cai1ClinNew$KBRAF==1))` | NA |`r length(which(Cai2ClinNew$BRAF==1))` |`r length(which(AMCClinNew$BRAF=="MUT"))`
+- | wt | `r length(which(Cai1ClinNew$BRAF==0))` |NA | `r length(which(Cai2ClinNew$BRAF==0))`|`r length(which(AMCClinNew$BRAF=="WT"))`
+
+
+
+# Associations with CMS data
+
+Load in the CMS calls from the Cairo1, LUMC and CAIRO 2. Note that Group 1 is CMS2/3 (epithelial), Group3 (CMS4) is mesenhcymal.
+
+```{r, fig.height=8}
+CAI1CMS=read.csv("../Cairo1_Classes_2016-07-26.csv")
+LUMCCMS=read.csv("../LUMC_Classes_2016-07-26.csv")
+CAI2CMS=read.csv("../Cairo2_Classes_2016-07-26.csv")
+
+# append information to the existing clinical file
+Cai1ClinNew$CMS=CAI1CMS$CCS[match(Cai1ClinNew$ID, CAI1CMS$Pat)]
+Cai2ClinNew$CMS=CAI2CMS$CCS[match(Cai2ClinNew$ID, CAI2CMS$Pat)]
+LeiClinNew$CMS=LUMCCMS$CCS[match(LeiClinNew$ID, LUMCCMS$Pat)]
+
+# annotate CMS as 2 if they are MSI positive
+Cai1ClinNew$CMS[which(Cai1ClinNew$MSI=="MSI")]=2
+Cai2ClinNew$CMS[which(Cai2ClinNew$MSI=="MSI")]=2
+LeiClinNew$CMS[which(LeiClinNew$MSI=="MSI")]=2
+
+CaiNames=paste(levels(factor(Cai1ClinNew$CMS[Cai1ClinNew$CMS!=2])), "N=", table(factor(Cai1ClinNew$CMS[Cai1ClinNew$CMS!=2]))[1:2])
+Cai2Names=paste(levels(factor(Cai2ClinNew$CMS[Cai2ClinNew$CMS!=2])), "N=", table(factor(Cai2ClinNew$CMS[Cai2ClinNew$CMS!=2]))[1:2])
+LeiNames=paste(levels(factor(LeiClinNew$CMS[LeiClinNew$CMS!=2])), "N=", 
+                    table(factor(LeiClinNew$CMS[LeiClinNew$CMS!=2]))[1:2])
+AMCNames=paste(levels(factor(AMCClinNew$CMS[AMCClinNew$CMS!="CMS1"])), "N=", table(factor(AMCClinNew$CMS[AMCClinNew$CMS!="CMS1"]))[1:3])
+par(mfrow=c(2,2))
+# make boxplots for all the available cases:
+boxplot(Cai1ClinNew$Count[Cai1ClinNew$CMS!=2]~Cai1ClinNew$CMS[Cai1ClinNew$CMS!=2], main="Cairo", names=CaiNames)
+boxplot(Cai2ClinNew$no.of.buds[Cai2ClinNew$CMS!=2]~Cai2ClinNew$CMS[Cai2ClinNew$CMS!=2], main="Cairo2", names=Cai2Names)
+boxplot(LeiClinNew$mean[LeiClinNew$CMS!=2]~LeiClinNew$CMS[LeiClinNew$CMS!=2], main="LUMC", names=LeiNames)
+boxplot(AMCClinNew$Budding.ITBCC[AMCClinNew$CMS!="CMS1"]~factor(AMCClinNew$CMS[AMCClinNew$CMS!="CMS1"]), main="AMC", names=paste(levels(factor(AMCClinNew$CMS[AMCClinNew$CMS!="CMS1"])), "N=", table(factor(AMCClinNew$CMS))[2:4]), las=2)
+```
+
+Below is a summary of the CMS data available for each cohort, as well as the budding statistics for each subtype:
+
+Feat | |CAIRO |LUMC|CAIRO2|AMC
+-----|-|------|----|------|----
+CMS available | | `r length(which(!is.na(Cai1ClinNew$CMS)))`|`r length(which(!is.na(LeiClinNew$CMS)))` | `r length(which(!is.na(Cai2ClinNew$CMS)))`|  `r length(which(!is.na(AMCClinNew$Class)))`
+CMS classifier | | IHC | IHC | IHC | GeneExp
+CMS2/3| no| `r length(which(Cai1ClinNew$CMS==1))`|`r length(which(LeiClinNew$CMS==1))`| `r length(which(Cai2ClinNew$CMS==1))`| `r length(which(AMCClinNew$Class==1))`
+-|mean|`r round(mean(Cai1ClinNew$Count[which(Cai1ClinNew$CMS==1)])*100)/100`|`r round(mean(LeiClinNew$mean[which(LeiClinNew$CMS==1)])*100)/100`|`r round(mean(Cai2ClinNew$no.of.buds[which(Cai2ClinNew$CMS==1)])*100)/100`|`r round(mean(AMCClinNew$Budding.ITBCC[which(AMCClinNew$Class==1)])*100)/100`
+-|sd|`r round(sd(Cai1ClinNew$Count[which(Cai1ClinNew$CMS==1)])*100)/100`|`r round(sd(LeiClinNew$mean[which(LeiClinNew$CMS==1)])*100)/100`|`r round(sd(Cai2ClinNew$no.of.buds[which(Cai2ClinNew$CMS==1)])*100)/100`|`r round(sd(AMCClinNew$Budding.ITBCC[which(AMCClinNew$Class==1)])*100)/100`
+CMS4| no| `r length(which(Cai1ClinNew$CMS==3))`|`r length(which(LeiClinNew$CMS==3))`| `r length(which(Cai2ClinNew$CMS==3))`|`r length(which(AMCClinNew$Class==3))`
+-|mean|`r round(mean(Cai1ClinNew$Count[which(Cai1ClinNew$CMS==3)])*100)/100`|`r round(mean(LeiClinNew$mean[which(LeiClinNew$CMS==3)])*100)/100`|`r round(mean(Cai2ClinNew$no.of.buds[which(Cai2ClinNew$CMS==3)])*100)/100`|`r round(mean(AMCClinNew$Budding.ITBCC[which(AMCClinNew$Class==3)])*100)/100`
+-|sd|`r round(sd(Cai1ClinNew$Count[which(Cai1ClinNew$CMS==3)])*100)/100`|`r round(sd(LeiClinNew$mean[which(LeiClinNew$CMS==3)])*100)/100`|`r round(sd(Cai2ClinNew$no.of.buds[which(Cai2ClinNew$CMS==3)])*100)/100`|`r round(sd(AMCClinNew$Budding.ITBCC[which(AMCClinNew$Class==3)])*100)/100`
+
+
+Perform wilcox test between the two groups (compare CCS 1 (epithelial) and CCS3 (mesenchymal):
+
+```{r}
+print('CAIRO 1')
+wilcox.test(Cai1ClinNew$Count[Cai1ClinNew$CMS!=2]~Cai1ClinNew$CMS[Cai1ClinNew$CMS!=2])
+
+print('LUMC')
+wilcox.test(LeiClinNew$mean[LeiClinNew$CMS!=2]~LeiClinNew$CMS[LeiClinNew$CMS!=2])
+
+print('CAIRO 2')
+wilcox.test(Cai2ClinNew$no.of.buds[Cai2ClinNew$CMS!=2]~Cai2ClinNew$CMS[Cai2ClinNew$CMS!=2])
+
+print('AMC (original classifier)')
+wilcox.test(AMCClinNew$Budding.ITBCC[AMCClinNew$Class!=2]~AMCClinNew$Class[AMCClinNew$Class!=2])
+print('AMC (CMS classification)')
+wilcox.test(AMCClinNew$Budding.ITBCC[AMCClinNew$CMS!="CMS2"| AMCClinNew$CMS!="CMS3"],AMCClinNew$Budding.ITBCC[AMCClinNew$CMS=="CMS4"])
+```
+
+
+```{r, fig.height=7, eval=F}
+Double check the properties of CMS1/CCS2: is there large variation in the scoring of buds?
+par(mfrow=c(2,2))
+library(beeswarm)
+beeswarm(LeiClinNew$mean~LeiClinNew$CMS, corral="wrap", pch=19, main="LUMC mean no spots")
+boxplot(LeiClinNew$max ~LeiClinNew$CMS, main="LUMC max no spots")
+boxplot(LeiClinNew$sd ~LeiClinNew$CMS, main="LUMC variation in no spots")
+
+table(LeiClinNew$TNM, LeiClinNew$CMS)
+```
+In all the above cohorts, there is a statistically higher ITBB in CMS4/mesenchymal subtype.
+
+# Survival analysis
+
+## Univariate thresholding
+
+A threshold of 5 is used to discretise between low and high budding. 
+
+```{r}
+# match the data with survival information
+ssCai1=Surv(Cai1ClinNew$OS_MONTH, Cai1ClinNew$OS_event)
+ssCai2=Surv(Cai2ClinNew$OS_month, Cai2ClinNew$OS_event)
+ssLei=Surv(LeiClinNew$DFS_month60, LeiClinNew$DFS_event60)
+ssAMC=Surv(AMCClinNew$timeMonths, as.numeric(AMCClinNew$Met2))
+
+# Plot survival Difference:
+# test the ggsurvplot
+fitCai1=survfit(ssCai1~T5, data=Cai1ClinNew)
+fitCai2=survfit(ssCai2~T5, data=Cai2ClinNew)
+fitLUMC=survfit(ssLei~T5, data=LeiClinNew)
+fitAMC=survfit(ssAMC~T5, data=AMCClinNew)
+
+QCai1=quantile(fitCai1, 0.5) 
+QCai2=quantile(fitCai2, 0.5)
+QLei=quantile(fitLUMC, 0.5)
+QAMC=quantile(fitAMC, 0.5)
+```
+
+Print a summary of the survival times including the 95% confidence intervals
+
+Sample|CAIRO|LUMC|CAIRO2|AMC
+------|-----|-----|-----|----
+T<5 | `r round(QCai1$quantile[1]*100)/100` (`r round(QCai1$lower[1]*100)/100` - `r round(QCai1$upper[1]*100)/100`) |`r QLei$quantile[1]` ( `r QLei$lower[1]` - `r QLei$upper[1]`)|`r round(QCai2$quantile[1]*100)/100` (`r round(QCai2$lower[1]*100)/100` - `r round(QCai2$upper[1]*100)/100`)  |`r QAMC$quantile[1]` 
+T>=5 | `r round(QCai1$quantile[2]*100)/100` (`r round(QCai1$lower[2]*100)/100` - `r round(QCai1$upper[2]*100)/100`) |`r QLei$quantile[2]` (`r QLei$lower[2]` - `r QLei$upper[2]` ) |`r round(QCai2$quantile[2]*100)/100` (`r round(QCai2$lower[2]*100)/100` - `r round(QCai2$upper[2]*100)/100`)  |`r QAMC$quantile[2]` 
+
+Below are the survival curves, reporting the logrank p value in the univariate case. These are displayed in **Figure2**
+
+```{r, fig.height=5, fig.width=4}
+ggPlotFun(fitCai1, Cai1ClinNew, "CAIRO")
+ggPlotFun(fitLUMC, LeiClinNew, "LUMC")
+ggPlotFun(fitCai2, Cai2ClinNew, "CAIRO2")
+ggPlotFun(fitAMC, AMCClinNew, "AMC")
+#grid.arrange(a1, a2, a3, a4, ncol=2, nrow=2)
+```
+
+Report the survival output:
+
+```{r}
+C1=coxph(ssCai1~factor(T5), data=Cai1ClinNew)
+L1=coxph(ssLei~factor(T5), data=LeiClinNew)
+C2=coxph(ssCai2~factor(T5), data=Cai2ClinNew)
+A1=coxph(ssAMC~factor(T5), data=AMCClinNew)
+```
+
+Cohort| HR| CI | logrank P
+------|---|----|---------
+CAIRO|`r round(exp(coef(C1))*100)/100`| `r round(summary(C1)$conf.int[ ,3]*100)/100` - `r round(summary(C1)$conf.int[ ,4]*100)/100`|`r round(summary(C1)$sctest[3]*10000)/10000`
+LUMC|`r round(exp(coef(L1))*100)/100`|`r round(summary(L1)$conf.int[ ,3]*100)/100` - `r round(summary(L1)$conf.int[ ,4]*100)/100`|`r round(summary(L1)$sctest[3]*10000)/10000`
+CAIRO2|`r round(exp(coef(C2))*100)/100`|`r round(summary(C2)$conf.int[ ,3]*100)/100` - `r round(summary(C2)$conf.int[ ,4]*100)/100`|`r round(summary(C2)$sctest[3]*10000)/10000`
+AMC|`r round(exp(coef(A1))*100)/100`|`r round(summary(A1)$conf.int[ ,3]*100)/100` - `r round(summary(A1)$conf.int[ ,4]*100)/100`|`r round(summary(A1)$sctest[3]*10000)/10000`
+
+
+```{r, fig.height=7, eval=F}
+## Univariate thresholding using median
+
+Cai1ClinNew$Med=cut(Cai1ClinNew$Count, c(-5, median(Cai1ClinNew$Count, na.rm=T), 10000), c("L", "H"))
+Cai2ClinNew$Med=cut(Cai2ClinNew$no.of.buds, c(-5, median(Cai2ClinNew$no.of.buds, na.rm=T), 10000), c("L", "H"))
+LeiClinNew$Med=cut(LeiClinNew$mean, c(-5, median(LeiClinNew$mean, na.rm=T), 10000), c("L", "H"))
+AMCClinNew$Med=cut(AMCClinNew$Budding.ITBCC, c(-5, median(AMCClinNew$Budding.ITBCC, na.rm=T), 10000), c("L", "H"))
+
+par(mfrow=c(2,2))
+
+# Plot survival Difference:
+fitCai1=survfit(ssCai1~Med, data=Cai1ClinNew)
+fitLUMC=survfit(ssLei~Med, data=LeiClinNew)
+fitCai2=survfit(ssCai2~Med, data=Cai2ClinNew)
+fitAMC=survfit(ssAMC~Med, data=AMCClinNew)
+
+ggPlotFun(fitCai1, Cai1ClinNew, "CAIRO")
+ggPlotFun(fitLUMC, LeiClinNew, "LUMC")
+ggPlotFun(fitCai2, Cai2ClinNew, "CAIRO2")
+ggPlotFun(fitAMC, AMCClinNew, "AMC")
+#grid.arrange(a1, a2, a3, a4, ncol=2, nrow=2)
+```
+
+
+
+```{r, eval=F}
+
+Report the survival output:
+
+C1=coxph(ssCai1~factor(Med), data=Cai1ClinNew)
+L1=coxph(ssLei~factor(Med), data=LeiClinNew)
+C2=coxph(ssCai2~factor(Med), data=Cai2ClinNew)
+A1=coxph(ssAMC~factor(Med), data=AMCClinNew)
+#summary(C1)
+#summary(L1)
+#summary(C2)
+#summary(A1)
+```
+
+
+## Multivariate cox models
+
+Here, we report the HR using Multivariate cox models adjusting for sex, age stage and treatment arms (where applicable)
+
+```{r}
+C1=coxph(ssCai1~T5+Geslacht+treatment.Arm+Age, data=Cai1ClinNew)
+L1=coxph(ssLei~T5+Sex+TNM+AgeOperation, data=LeiClinNew)
+C2=coxph(ssCai2~T5+Sex+Arm+Age, data=Cai2ClinNew)
+A1=coxph(ssAMC~T5+Sex+stage, data=AMCClinNew)
+
+# make a table here?
+#HRtab=data.frame(CAIRO1=exp(coef(C1)))
+
+C1confint=round(summary(C1)$conf.int*100)/100
+C2confint=round(summary(C2)$conf.int*100)/100
+L1confint=round(summary(L1)$conf.int*100)/100
+A1confint=round(summary(A1)$conf.int*100)/100
+
+C1oef=round(exp(coef(C1))*100)/100
+C2oef=round(exp(coef(C2))*100)/100
+L1oef=round(exp(coef(L1))*100)/100
+A1oef=round(exp(coef(A1))*100)/100
+```
+
+Table of the covariates using Threshold of 5:
+
+
+Variable | | CAIRO1| LUMC|CAIRO2|AMC
+---------|-|-------|----|-----|----
+Budding| low| | | |
+-| high|`r C1oef[1]` (`r C1confint[ 1, 3]`-`r C1confint[ 1, 4]`)| `r L1oef[1]` (`r L1confint[ 1, 3]`-`r L1confint[ 1, 4]`)|`r C2oef[1]` (`r C2confint[ 1, 3]`-`r C2confint[ 1, 4]`)|`r A1oef[1]` (`r A1confint[ 1, 3]`-`r A1confint[ 1, 4]`)
+Sex | F|  | | |
+- | M |`r C1oef[2]` (`r C1confint[2, 3]` - `r C1confint[2, 4]`) | `r L1oef[2]` (`r L1confint[2, 3]`-`r L1confint[2, 4]`) |`r C2oef[2]` (`r C2confint[2, 3]` - `r C2confint[2, 4]`) | `r A1oef[2]` (`r A1confint[2, 3]` - `r A1confint[2, 4]`)
+Arm |A | | | |
+-|B | `r C1oef[3]` (`r C1confint[3, 3]` - `r C1confint[3, 4]`) |  | `r C2oef[3]` (`r C2confint[3, 3]` - `r C2confint[3, 4]`) |
+Stage | 1*|  | | |
+- | 2*|  | `r L1oef[3]` (`r L1confint[3, 3]` - `r L1confint[3, 4]`)  | |  `r A1oef[3]` (`r A1confint[3, 3]` - `r A1confint[3, 4]`) 
+-| 3|  | `r L1oef[4]` (`r L1confint[4, 3]` - `r L1confint[4, 4]`) | |
+- |4|  | `r L1oef[5]` (`r L1confint[5, 3]` - `r L1confint[5, 4]`)  | |
+Age | |`r C1oef[4]` (`r C1confint[4, 3]` - `r C1confint[4, 4]`)  |`r L1oef[6]` (`r L1confint[6, 3]` - `r L1confint[6, 4]`)  | `r C2oef[4]` (`r C2confint[4, 3]` - `r C2confint[4, 4]`)|
+Model P | |`r round(summary(C1)$sctest[3]*10000)/10000`| `r round(summary(L1)$sctest[3]*10000)/10000`|`r round(summary(C2)$sctest[3]*10000)/10000`|`r round(summary(A1)$sctest[3]*10000)/10000`
+
+
+Note: For the AMC cohort, levels 1 and 2 refer to stage 2A and 2B respectively
+
+We can also visualise this in forest plots (as shown in **Figure 3**)
+
+```{r}
+FVals=function(coxrslt,Lvls, nr=11){
+  a1=summary(coxrslt)
+  anew=a1$conf.int[ ,-2]
+  dm=matrix(NA, ncol=3, nrow=(nr))
+  dm[Lvls, ]=round(anew*100)/100
+  dm
+}
+
+data=data.frame(X1=c("T5", "", "Sex", "", "Arm", "", "TNM", "","","", "Age"),
+                X2=c("<5", ">=5", "F", "M", "A", "B", "1", "2", "3", "4", ""),
+                AMC=FVals(A1, c(2, 4, 8)),
+                LUMC=FVals(L1, c(2, 4, 8:11)),
+                  CAIRO=FVals(C1, c(2, 4, 6, 11)),
+                  CAIRO2=FVals(C2, c(2, 4, 6, 11)))
+
+PlotForest=function(label, data){
+  forestplot(label,
+           data[ ,1],
+           data[ ,2],
+           data[ ,3],
+           zero = 1,
+           cex  = 1,
+           xlab = "Hazards Ratio",col=fpColors(box="black", zero = "gray50"),colgap=unit(1,"points"),
+           txt_gp=fpTxtGp(label=gpar(cex=1),
+                            ticks=gpar(cex=1),
+                            xlab=gpar(cex = 1),
+                            title=gpar(cex = 1)),
+             xlog=T,boxsize=0.1, lwd.axis=2, lwd.zero = 2, lwd.ci = 2, lwd.xaxis = 2,
+           new_page = FALSE)
+}
+```
+
+```{r, fig.width=10}
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, 4)))
+pushViewport(viewport(layout.pos.col = 1))
+PlotForest(paste(data[ ,1], data[ ,2], data[ ,3], sep=" "),  data[,3:5 ])
+popViewport()
+pushViewport(viewport(layout.pos.col = 2))
+PlotForest(data[ ,6],data[ , 6:8])
+popViewport()
+pushViewport(viewport(layout.pos.col = 3))
+PlotForest(data[ ,9], data[ ,9:11])
+popViewport()
+pushViewport(viewport(layout.pos.col = 4))
+PlotForest(data[ ,12],data[ , 12:14])
+
+```
+
+A summary of the number of samples with survival information:
+
+```{r}
+print('CAIRO 1')
+summary(Cai1ClinNew[!is.na(Cai1ClinNew$OS_event),c("T5", "Geslacht")])
+print('LUMC')
+summary(LeiClinNew[!is.na(LeiClinNew$DFS_event60),c("T5", "Sex", "TNM")])
+print('CAIRO 2')
+summary(Cai2ClinNew[!is.na(Cai2ClinNew$OS_event),c("T5", "Sex")])
+print('AMC')
+summary(AMCClinNew[!is.na(AMCClinNew$Met),c("T5", "Sex", "stage")])
+```
+
+# Budding as a continuous variable
+
+Note that Count data is log10 transformed to ensure it is more normally distributed. Below are the distributions for age: these appear to be not as skewed so are not transformed in the following analyses. This analysis is shown in **Figure 3**
+
+```{r, eval=F}
+par(mfrow=c(2,2))
+hist(Cai1ClinNew$Age, main="age CAIRO1")
+hist(Cai2ClinNew$Age, main="age CAIRO2")
+hist(LeiClinNew$AgeOperation, main="age LUMC")
+
+```
+
+## Univariate analysis
+
+repeat the above analysis using the raw number of buds. Instead of showing KM plots, indicate the HR of bud count as a continuous variable:
+
+```{r}
+C1=coxph(ssCai1~log10(Count+1), data=Cai1ClinNew)
+L1=coxph(ssLei~log10(mean+1), data=LeiClinNew)
+C2=coxph(ssCai2~log10(no.of.buds+1), data=Cai2ClinNew)
+A1=coxph(ssAMC~log10(Budding.ITBCC+1), data=AMCClinNew)
+```
+
+Summary of the hazards ratios
+
+Cohort| HR| CI | logrank P
+------|---|----|---------
+CAIRO|`r round(exp(coef(C1))*100)/100`| `r round(summary(C1)$conf.int[ ,3]*100)/100` - `r round(summary(C1)$conf.int[ ,4]*100)/100`|`r round(summary(C1)$sctest[3]*10000)/10000`
+LUMC|`r round(exp(coef(L1))*100)/100`|`r round(summary(L1)$conf.int[ ,3]*100)/100` - `r round(summary(L1)$conf.int[ ,4]*100)/100`|`r round(summary(L1)$sctest[3]*10000)/10000`
+CAIRO2|`r round(exp(coef(C2))*100)/100`|`r round(summary(C2)$conf.int[ ,3]*100)/100` - `r round(summary(C2)$conf.int[ ,4]*100)/100`|`r round(summary(C2)$sctest[3]*10000)/10000`
+AMC|`r round(exp(coef(A1))*100)/100`|`r round(summary(A1)$conf.int[ ,3]*100)/100` - `r round(summary(A1)$conf.int[ ,4]*100)/100`|`r round(summary(A1)$sctest[3]*10000)/10000`
+
+
+## Multivariate analysis
+
+Repeat the same analysis taking into account age, stage and treatment arm
+
+```{r}
+C1=coxph(ssCai1~log10(Count+1)+Geslacht+treatment.Arm+(Age), data=Cai1ClinNew)
+L1=coxph(ssLei~log10(mean+1)+Sex+TNM+(AgeOperation), data=LeiClinNew)
+C2=coxph(ssCai2~log10(no.of.buds+1)+Sex+Arm+(Age), data=Cai2ClinNew)
+A1=coxph(ssAMC~log10(Budding.ITBCC+1)+Sex+stage, data=AMCClinNew)
+
+C1confint=round(summary(C1)$conf.int*100)/100
+C2confint=round(summary(C2)$conf.int*100)/100
+L1confint=round(summary(L1)$conf.int*100)/100
+A1confint=round(summary(A1)$conf.int*100)/100
+
+C1oef=round(exp(coef(C1))*100)/100
+C2oef=round(exp(coef(C2))*100)/100
+L1oef=round(exp(coef(L1))*100)/100
+A1oef=round(exp(coef(A1))*100)/100
+```
+
+Variable | | CAIRO1| LUMC|CAIRO2|AMC
+---------|-|-------|----|-----|----
+Budding| low| | | |
+-| high|`r C1oef[1]` (`r C1confint[ 1, 3]`-`r C1confint[ 1, 4]`)| `r L1oef[1]` (`r L1confint[ 1, 3]`-`r L1confint[ 1, 4]`)|`r C2oef[1]` (`r C2confint[ 1, 3]`-`r C2confint[ 1, 4]`)|`r A1oef[1]` (`r A1confint[ 1, 3]`-`r A1confint[ 1, 4]`)
+Sex | F|  | | |
+- | M |`r C1oef[2]` (`r C1confint[2, 3]` - `r C1confint[2, 4]`) | `r L1oef[2]` (`r L1confint[2, 3]`-`r L1confint[2, 4]`) |`r C2oef[2]` (`r C2confint[2, 3]` - `r C2confint[2, 4]`) | `r A1oef[2]` (`r A1confint[2, 3]` - `r A1confint[2, 4]`)
+Arm |A | | | |
+-|B | `r C1oef[3]` (`r C1confint[3, 3]` - `r C1confint[3, 4]`) |  | `r C2oef[3]` (`r C2confint[3, 3]` - `r C2confint[3, 4]`) |
+Stage | 1*|  | | |
+- | 2*|  | `r L1oef[3]` (`r L1confint[3, 3]` - `r L1confint[3, 4]`)  | |  `r A1oef[3]` (`r A1confint[3, 3]` - `r A1confint[3, 4]`) 
+-| 3|  | `r L1oef[4]` (`r L1confint[4, 3]` - `r L1confint[4, 4]`) | |
+- |4|  | `r L1oef[5]` (`r L1confint[5, 3]` - `r L1confint[5, 4]`)  | |
+Age | |`r C1oef[4]` (`r C1confint[4, 3]` - `r C1confint[4, 4]`)  |`r L1oef[6]` (`r L1confint[6, 3]` - `r L1confint[6, 4]`)  | `r C2oef[4]` (`r C2confint[4, 3]` - `r C2confint[4, 4]`)|
+Model P | |`r round(summary(C1)$sctest[3]*10000)/10000`| `r round(summary(L1)$sctest[3]*10000)/10000`|`r round(summary(C2)$sctest[3]*10000)/10000`|`r round(summary(A1)$sctest[3]*10000)/10000`
+
+
+Plot forest plots of harzards ratios
+
+```{r, fig.width=10}
+
+data=data.frame(X1=c("counts", "Sex", "", "Arm", "", "TNM", "","","", "Age"),
+                X2=c(" ", "F", "M", "A", "B", "1", "2", "3", "4", ""),
+                AMC=FVals(A1, c(1, 3, 7), nr=10),
+                LUMC=FVals(L1, c(1, 3, 7:10), nr=10),
+                  CAIRO=FVals(C1, c(1, 3, 5, 10), nr=10),
+                  CAIRO2=FVals(C2, c(1, 3, 5, 10), nr=10))
+
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, 4)))
+pushViewport(viewport(layout.pos.col = 1))
+PlotForest(paste(data[ ,1], data[ ,2], data[ ,3], sep=" "),  data[,3:5 ])
+popViewport()
+pushViewport(viewport(layout.pos.col = 2))
+PlotForest(data[ ,6],data[ , 6:8])
+popViewport()
+pushViewport(viewport(layout.pos.col = 3))
+PlotForest(data[ ,9], data[ ,9:11])
+popViewport()
+pushViewport(viewport(layout.pos.col = 4))
+PlotForest(data[ ,12],data[ , 12:14])
+
+#par(mfrow=c(2,2))
+# PlotHazards(C1, Cai1ClinNew[ ,c("Geslacht","Age","Count")], c(2:3), "CAIRO")
+# PlotHazards(L1, LeiClinNew[,c("Sex","TNM","AgeOperation","mean") ], c(3:4), "LUMC")
+# PlotHazards(C2, Cai2ClinNew[ c("Sex","Age", "no.of.buds")],c(2:3) , "CAIRO2")
+# PlotHazards(A1, AMCClinNew[ c("Sex","stage", "Budding.ITBCC")],3, "AMC")
+```
+
+# Treatment outcome (CAIRO cohorts)
+
+Look at the effect of outcome taking into account the treatment used. This is featured in **Supplementary Figure 1**
+
+## Thresholding
+
+Threshold according to T5 and see whether there is an effect on treatment in KM plots. Here we discretise account to both treatment arm as well as Arm into 4 groups of interest
+
+### CAIRO
+
+survival based on thresholding:
+
+```{r}
+s1=survfit(ssCai1~T5+treatment.Arm, data=Cai1ClinNew)
+
+ggsurvplot(s1, Cai1ClinNew, risk.table = T, linetype=c(1,2,1,2,1,2), palette =c("black", "grey", "red", "pink", "blue", "lightblue"),title="CAIRO1 T5", break.time.by = 10, font.tickslab = 10, pval=T)
+```
+
+Below, we can run a cox model taking into account age, and sex:
+
+```{r}
+print('coxph model: with age, treatment arm, sex')
+Cai1.Rcox=coxph(ssCai1~treatment.Arm+T5+Geslacht+Age, data=Cai1ClinNew)
+summary(Cai1.Rcox)
+```
+
+We can create forest plots looking at separate treatment arms:
+
+```{r}
+Cai1.RcoxA=coxph(ssCai1[Cai1ClinNew$treatment.Arm=="ArmA"]~Geslacht+T5+Age, data=subset(Cai1ClinNew, treatment.Arm=="ArmA"))
+CaiA.RcoxB=coxph(ssCai1[Cai1ClinNew$treatment.Arm=="ArmB"]~Geslacht+T5+Age, data=subset(Cai1ClinNew, treatment.Arm=="ArmB"))
+
+data=data.frame(X1=c( "Sex","", "Counts","",  "Age"),
+                X2=c( "F", "M", "<5", "5+", ""),
+                ArmA=FVals(Cai1.RcoxA, c(2,4:5), nr=5),
+                ArmB=FVals(CaiA.RcoxB, c(2,4:5), nr=5))
+
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, 2)))
+pushViewport(viewport(layout.pos.col = 1))
+PlotForest(paste(data[ ,1], data[ ,2], data[ ,3], sep=" "),  data[,3:5 ])
+popViewport()
+pushViewport(viewport(layout.pos.col = 2))
+PlotForest(data[ ,6],data[ , 6:8])
+popViewport()
+```
+
+
+### CAIRO2
+
+Using 5 as the cut off
+
+```{r}
+s1=survfit(ssCai2~T5+Arm, data=Cai2ClinNew)
+
+ggsurvplot(s1, Cai2ClinNew, risk.table = T, linetype=c(1,2,1,2,1,2), palette =c("black", "grey", "red", "pink", "blue", "lightblue"),title="CAIRO1 T5", break.time.by = 10, font.tickslab = 10, pval=T)
+
+```
+
+```{r, eval=F}
+# plot(survfit(ssCai2~Med+Arm, data=Cai2ClinNew),  main="Cairo2 treatment arms", lwd=2,mark.time=T, lty=c(1,1,2,2), col=c("black",  "grey", "black","grey"), ylab="OS", xlab="Time (months)")
+# Names=paste(rep(levels(Cai2ClinNew$Med), each=2), rep(levels(Cai2ClinNew$Arm), 2))
+# legend("topright", Names, lty=c(1,1,2,2), col=c("black", "grey", "black", "grey"))
+
+s1=survfit(ssCai2~Med+Arm, data=Cai2ClinNew)
+
+ggsurvplot(s1, Cai2ClinNew, risk.table = T, linetype=c(1,1,2,2), palette = c("black", "gray48", "gray0", "gray49"),title="CAIRO2 Med", break.time.by = 10, font.tickslab = 10)
+
+```
+
+
+```{r}
+print('coxph model: with age, treatment arm, sex')
+Cai2.Rcox=coxph(ssCai2~Arm+T5+Sex+Age, data=Cai2ClinNew)
+summary(Cai2.Rcox)
+```
+
+Forest plot looking at separate treatment arms:
+
+```{r}
+print('coxph model: with age, treatment arm, sex')
+Cai1.RcoxA=coxph(ssCai2[Cai2ClinNew$Arm=="cntl"]~Sex+T5+Age, data=subset(Cai2ClinNew, Arm=="cntl"))
+Cai1.RcoxB=coxph(ssCai2[Cai2ClinNew$Arm=="wCetux"]~Sex+T5+Age, data=subset(Cai2ClinNew, Arm=="wCetux"))
+
+data=data.frame(X1=c( "Sex","", "Counts","",  "Age"),
+                X2=c( "F", "M", "<5", "5+", ""),
+                ArmA=FVals(Cai1.RcoxA, c(2,4:5), nr=5),
+                ArmB=FVals(Cai1.RcoxB, c(2,4:5), nr=5))
+
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, 2)))
+pushViewport(viewport(layout.pos.col = 1))
+PlotForest(paste(data[ ,1], data[ ,2], data[ ,3], sep=" "),  data[,3:5 ])
+popViewport()
+pushViewport(viewport(layout.pos.col = 2))
+PlotForest(data[ ,6],data[ , 6:8])
+popViewport()
+```
+
+## Continuous variable
+
+As previous analysis has shown that budding counts rather than a strict cut off may have prognostic value, we do the same analysis for predictive value:
+
+### CAIRO
+
+```{r}
+print('coxph model: with age, treatment arm, sex')
+Cai1.Rcox=coxph(ssCai1~treatment.Arm+Geslacht+log10(Count+1)+Age, data=Cai1ClinNew)
+
+Cai1.RcoxA=coxph(ssCai1[Cai1ClinNew$treatment.Arm=="ArmA"]~Geslacht+Age+log10(Count+1), data=subset(Cai1ClinNew, treatment.Arm=="ArmA"))
+Cai1.RcoxB=coxph(ssCai1[Cai1ClinNew$treatment.Arm=="ArmB"]~Geslacht+Age+log10(Count+1), data=subset(Cai1ClinNew, treatment.Arm=="ArmB"))
+
+```
+
+
+### CAIRO 2
+
+```{r}
+Cai2.RcoxA=coxph(ssCai2[Cai2ClinNew$Arm=="cntl"]~Sex+Age+log10(no.of.buds+1), data=subset(Cai2ClinNew, Arm=="cntl"))
+
+Cai2.RcoxB=coxph(ssCai2[Cai2ClinNew$Arm=="wCetux"]~Sex+Age+log10(no.of.buds+1), data=subset(Cai2ClinNew, Arm=="wCetux"))
+
+print('coxph model: with age, treatment arm, sex')
+Cai2.Rcox=coxph(ssCai2~Arm+Sex+Age+log10(no.of.buds+1), data=Cai2ClinNew)
+summary(Cai2.Rcox)
+
+
+data=data.frame(X1=c( "Sex","",  "Age", "NoBuds"),
+                X2=c( "F", "M",  "", ""),
+                ArmA=FVals(Cai1.RcoxA, c(2:4), nr=4),
+                ArmB=FVals(CaiA.RcoxB, c(2:4), nr=4))
+
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, 2)))
+pushViewport(viewport(layout.pos.col = 1))
+PlotForest(paste(data[ ,1], data[ ,2], data[ ,3], sep=" "),  data[,3:5 ])
+popViewport()
+pushViewport(viewport(layout.pos.col = 2))
+PlotForest(data[ ,6],data[ , 6:8])
+popViewport()
+```
+
+
+
+
+# Effect of KRAS/BRAF mutation
+
+Here, we assess whether there is an association between mutation status and outcome, and we also include KRAS and BRAF status into the cox models:
+
+## Association with ITBB
+
+```{r, eval=F}
+par(mfrow=c(2,2))
+
+CaiNames=paste(levels(factor(Cai1ClinNew$KRAS_BRAF)), "N=", table(factor(Cai1ClinNew$KRAS_BRAF))[1:2])
+Cai2Names=paste(levels(factor(Cai2ClinNew$KRAS_BRAF)), "N=", table(factor(Cai2ClinNew$KRAS_BRAF))[1:2])
+# LeiNames=paste(levels(factor(LeiClinNew$CMS[LeiClinNew$CMS!=2])), "N=", 
+#                     table(factor(LeiClinNew$CMS[LeiClinNew$CMS!=2]))[1:2])
+AMCNames=paste(levels(factor(AMCClinNew$KRAS_BRAF)), "N=", table(factor(AMCClinNew$KRAS_BRAF))[1:2])
+
+
+# make boxplots for all the available cases:
+boxplot(Cai1ClinNew$Count~Cai1ClinNew$KRAS_BRAF, main="Cairo", horizontal=T,
+        names=CaiNames, las=2)
+boxplot(Cai2ClinNew$no.of.buds~Cai2ClinNew$KRAS_BRAF, main="Cairo2", horizontal=T,
+        names=Cai2Names, las=2)
+#boxplot(LeiClinNew$mean~LeiClinNew$CMS, main="LUMC")
+boxplot(AMCClinNew$Budding.ITBCC~AMCClinNew$KRAS_BRAF, main="AMC", horizontal=T,
+        names=AMCNames, las=2)
+
+print('CAIRO 1')
+wilcox.test(Cai1ClinNew$Count~Cai1ClinNew$KRAS_BRAF)
+
+print('LUMC coming soon')
+#$wilcox.test(LeiClinNew$mean[LeiClinNew$CMS!=2]~LeiClinNew$CMS[LeiClinNew$CMS!=2])
+
+print('CAIRO 2')
+wilcox.test(Cai2ClinNew$no.of.buds~Cai2ClinNew$KRAS_BRAF)
+
+print('AMC')
+wilcox.test(AMCClinNew$Budding.ITBCC~AMCClinNew$Ras)
+wilcox.test(AMCClinNew$Budding.ITBCC~AMCClinNew$KRAS_BRAF)
+
+```
+
+
+```{r, fig.height=6}
+Cai1ClinNew$NewKRAS=0
+Cai1ClinNew$NewKRAS[which(Cai1ClinNew$KRAS==1)]="KRAS"
+Cai1ClinNew$NewKRAS[which(Cai1ClinNew$BRAF==1)]="BRAF"
+
+Cai2ClinNew$NewKRAS=0
+Cai2ClinNew$NewKRAS[which(Cai2ClinNew$KRAS!="wt")]="KRAS"
+Cai2ClinNew$NewKRAS[which(Cai2ClinNew$BRAF==1)]="BRAF"
+
+AMCClinNew$NewKRAS=0
+AMCClinNew$NewKRAS[which(AMCClinNew$Ras=="Mut")]="KRAS"
+AMCClinNew$NewKRAS[which(AMCClinNew$BRAF=="MUT")]="BRAF"
+
+par(mfrow=c(2,2), oma=c(0, 3,0,0))
+
+CaiNames=paste(levels(factor(Cai1ClinNew$NewKRAS)), "N=", table(factor(Cai1ClinNew$NewKRAS)))
+Cai2Names=paste(levels(factor(Cai2ClinNew$NewKRAS)), "N=", table(factor(Cai2ClinNew$NewKRAS)))
+# LeiNames=paste(levels(factor(LeiClinNew$CMS[LeiClinNew$CMS!=2])), "N=", 
+#                     table(factor(LeiClinNew$CMS[LeiClinNew$CMS!=2]))[1:2])
+AMCNames=paste(levels(factor(AMCClinNew$NewKRAS)), "N=", table(factor(AMCClinNew$NewKRAS)))
+
+
+# make boxplots for all the available cases:
+boxplot(Cai1ClinNew$Count~Cai1ClinNew$NewKRAS, main="Cairo", horizontal=T,
+        names=CaiNames, las=2)
+boxplot(Cai2ClinNew$no.of.buds~Cai2ClinNew$NewKRAS, main="Cairo2", horizontal=T,
+        names=Cai2Names, las=2)
+#boxplot(LeiClinNew$mean~LeiClinNew$CMS, main="LUMC")
+boxplot(AMCClinNew$Budding.ITBCC~AMCClinNew$NewKRAS, main="AMC", horizontal=T,
+        names=AMCNames, las=2)
+
+```
+
+Perform wilcoxon test to see if there is any significant difference in budding between the mutants and WT: 
+
+```{r}
+Amat=matrix(NA, 3, 2)
+Amat[1,1]=wilcox.test(Cai1ClinNew$Count[Cai1ClinNew$NewKRAS==0], Cai1ClinNew$Count[Cai1ClinNew$NewKRAS=="BRAF"])$p.value
+Amat[1,2]=wilcox.test(Cai1ClinNew$Count[Cai1ClinNew$NewKRAS==0], Cai1ClinNew$Count[Cai1ClinNew$NewKRAS=="KRAS"])$p.value
+
+Amat[2,1]=wilcox.test(Cai2ClinNew$no.of.buds[Cai2ClinNew$NewKRAS==0], Cai2ClinNew$no.of.buds[Cai2ClinNew$NewKRAS=="BRAF"])$p.value
+Amat[2,2]=wilcox.test(Cai2ClinNew$no.of.buds[Cai2ClinNew$NewKRAS==0], Cai2ClinNew$no.of.buds[Cai2ClinNew$NewKRAS=="KRAS"])$p.value
+
+Amat[3,1]=wilcox.test(AMCClinNew$Budding.ITBCC[AMCClinNew$NewKRAS==0], AMCClinNew$Budding.ITBCC[AMCClinNew$NewKRAS=="BRAF"])$p.value
+Amat[3,2]=wilcox.test(AMCClinNew$Budding.ITBCC[AMCClinNew$NewKRAS==0], AMCClinNew$Budding.ITBCC[AMCClinNew$NewKRAS=="KRAS"])$p.value
+
+colnames(Amat)=c("BRAF", "RAS")
+rownames(Amat)=c("CAIRO", "CAIRO2", "AMC")
+Amat
+```
+
+This is featured in **Figure 5**
+
+## Splitting Treatment Arms according to KRAS or BRAF
+
+### CAIRO
+
+```{r, fig.height=8}
+par(mfrow=c(2,2))
+plot(survfit(ssCai1[which(Cai1ClinNew$treatment.Arm=="ArmA" & Cai1ClinNew$KRAS_BRAF==0)]~T5, data=subset(Cai1ClinNew,treatment.Arm=="ArmA"&KRAS_BRAF==0)),  main="Cairo1: armA wt", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai1ClinNew$T5),"(", table(Cai1ClinNew$T5[which(Cai1ClinNew$treatment.Arm=="ArmA" & Cai1ClinNew$KRAS_BRAF==0)]), ")"), lty=c(1:2))
+
+plot(survfit(ssCai1[which(Cai1ClinNew$treatment.Arm=="ArmB"& Cai1ClinNew$KRAS_BRAF==0)]~T5, data=subset(Cai1ClinNew, treatment.Arm=="ArmB" & KRAS_BRAF==0)),  main="Cairo1: ArmB wt", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai1ClinNew$T5),"(", table(Cai1ClinNew$T5[which(Cai1ClinNew$treatment.Arm=="ArmB" & Cai1ClinNew$KRAS_BRAF==0)]), ")"), lty=c(1:2))
+
+plot(survfit(ssCai1[which(Cai1ClinNew$treatment.Arm=="ArmA" & Cai1ClinNew$KRAS_BRAF==1)]~T5, data=subset(Cai1ClinNew,treatment.Arm=="ArmA"&KRAS_BRAF==1)),  main="Cairo1: armA mt", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai1ClinNew$T5),"(", table(Cai1ClinNew$T5[which(Cai1ClinNew$treatment.Arm=="ArmA" & Cai1ClinNew$KRAS_BRAF==1)]), ")"), lty=c(1:2))
+
+plot(survfit(ssCai1[which(Cai1ClinNew$treatment.Arm=="ArmB"& Cai1ClinNew$KRAS_BRAF==1)]~T5, data=subset(Cai1ClinNew, treatment.Arm=="ArmB" & KRAS_BRAF==1)),  main="Cairo1: ArmB mt", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai1ClinNew$T5),"(", table(Cai1ClinNew$T5[which(Cai1ClinNew$treatment.Arm=="ArmB" & Cai1ClinNew$KRAS_BRAF==1)]), ")"), lty=c(1:2))
+```
+
+### CAIRO2
+
+```{r, fig.height=8}
+par(mfrow=c(2,2))
+
+plot(survfit(ssCai2[which(Cai2ClinNew$Arm=="cntl" & Cai2ClinNew$KRAS_BRAF==F)]~T5, data=subset(Cai2ClinNew,Arm=="cntl"& KRAS_BRAF==F)),  main="Cairo2: control KRAS wt", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai2ClinNew$T5),"(", table(Cai2ClinNew$T5[which(Cai2ClinNew$Arm=="cntl" & Cai2ClinNew$KRAS_BRAF==F)]), ")"), lty=c(1:2))
+
+plot(survfit(ssCai2[which(Cai2ClinNew$Arm=="cntl" & Cai2ClinNew$KRAS_BRAF==T)]~T5, data=subset(Cai2ClinNew,Arm=="cntl" & KRAS_BRAF==T)),  main="Cairo2: control KRAS mut", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai2ClinNew$T5),"(", table(Cai2ClinNew$T5[which(Cai2ClinNew$Arm=="cntl" & Cai2ClinNew$KRAS_BRAF==T)]), ")"), lty=c(1:2))
+
+plot(survfit(ssCai2[which(Cai2ClinNew$Arm=="wCetux" & Cai2ClinNew$KRAS_BRAF==F)]~T5, data=subset(Cai2ClinNew,Arm=="wCetux" & KRAS_BRAF==F)),  main="Cairo2: cetux KRAS wt", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai2ClinNew$T5),"(", table(Cai2ClinNew$T5[which(Cai2ClinNew$Arm=="wCetux" & Cai2ClinNew$KRAS_BRAF==F)]), ")"), lty=c(1:2))
+
+plot(survfit(ssCai2[which(Cai2ClinNew$Arm=="wCetux" & Cai2ClinNew$KRAS_BRAF==T)]~T5, data=subset(Cai2ClinNew,Arm=="wCetux" & KRAS_BRAF==T)),  main="Cairo2: cetux KRAS mut", lwd=2,mark.time=T, lty=c(1:2), col="black", ylab="OS", xlab="Time (months)")
+legend("topright", paste(levels(Cai2ClinNew$T5),"(", table(Cai2ClinNew$T5[which(Cai2ClinNew$Arm=="wCetux" & Cai2ClinNew$KRAS_BRAF==T)]), ")"), lty=c(1:2))
+```
+
+
+## Rerun cox models:
+
+Determine whether associations are still significant after taking into account Mutation status
+
+### AMC set 
+
+```{r}
+A1=coxph(ssAMC~Sex+stage+KRAS_BRAF+log10(Budding.ITBCC+1), data=AMCClinNew)
+summary(A1)
+```
+
+Taking into account KRAS or BRAF mutation, ITBB no longer has a prognostic effect
+
+### CAIRO
+
+```{r}
+Cai1.Rcox=coxph(ssCai1~KRAS_BRAF+treatment.Arm+Geslacht+log10(Count+1)+Age, data=Cai1ClinNew)
+summary(Cai1.Rcox)
+
+```
+
+ITBB still remains a strong predictor of survival after accounting for KRAS or BRAF mutation
+
+### CAIRO2
+
+```{r}
+Cai2.Rcox=coxph(ssCai2~KRAS_BRAF+Arm+Sex+log10(no.of.buds+1)+Age, data=Cai2ClinNew)
+summary(Cai2.Rcox)
+```
+
+
+KRAS and BRAF mutation, and age are much better explainers of survival than ITBB
+
+```{r, eval=F}
+print('coxph model: with age, treatment arm, sex')
+Cai2ClinNew$KRAS_BRAF=factor(Cai2ClinNew$KRAS_BRAF)
+Cai1.Rcox=coxph(ssCai1~treatment.Arm+Geslacht+KRAS_BRAF+log10(Count+1)+Age, data=Cai1ClinNew)
+Cai2.Rcox=coxph(ssCai2~Arm+Sex+KRAS_BRAF+log10(no.of.buds+1)+Age, data=Cai2ClinNew)
+
+#PlotHazards(Cai1.Rcox, Cai1ClinNew[ ,c( "treatment.Arm","Geslacht","KRAS_BRAF", "Count", "Age")], c(4:5), "CAIRO")
+#PlotHazards(Cai2.Rcox, Cai2ClinNew[ ,c( "Arm","Sex","KRAS_BRAF", "no.of.buds", "Age")],  c(4:5), "CAIRO2")
+
+print('coefficients for CAIRO1')
+summary(Cai1.Rcox)$conf.int[ ,-2]
+
+print('coefficients for CAIRO2')
+summary(Cai2.Rcox)$conf.int[ ,-2]
+
+
+Cai1.Rcox=coxph(ssCai1~treatment.Arm+Geslacht+log10(Count+1)+Age, data=Cai1ClinNew)
+Cai2.Rcox=coxph(ssCai2~Arm+Sex+log10(no.of.buds+1)+Age, data=Cai2ClinNew)
+
+#PlotHazards(Cai1.Rcox, Cai1ClinNew[ ,c( "treatment.Arm","Geslacht","Count", "Age")], c(4:5), "CAIRO")
+#PlotHazards(Cai2.Rcox, Cai2ClinNew[ ,c( "Arm","Sex","no.of.buds", "Age")],  c(4:5), "CAIRO2")
+```
+
+
+```{r, eval=F}
+
+Cai1.RcoxA=coxph(ssCai1[Cai1ClinNew$treatment.Arm=="ArmA"]~Geslacht+KRAS_BRAF+log10(Count+1)+Age, data=subset(Cai1ClinNew, treatment.Arm=="ArmA"))
+
+Cai1.RcoxB=coxph(ssCai1[Cai1ClinNew$treatment.Arm=="ArmB"]~Geslacht+KRAS_BRAF+log10(Count+1)+Age, data=subset(Cai1ClinNew, treatment.Arm=="ArmB"))
+
+Cai2.RcoxA=coxph(ssCai2[Cai2ClinNew$Arm=="cntl"]~KRAS_BRAF+Sex+log10(no.of.buds+1)+Age, 
+                 data=subset(Cai2ClinNew, Arm=="cntl"))
+
+Cai2.RcoxB=coxph(ssCai2[Cai2ClinNew$Arm=="wCetux"]~KRAS_BRAF+Sex+log10(no.of.buds+1)+Age, data=subset(Cai2ClinNew, Arm=="wCetux"))
+
+#PlotHazards(Cai1.RcoxA, Cai1ClinNew[ ,c( "Geslacht","KRAS_BRAF","Count", "Age")], c(3:4), "CAIRO")
+#PlotHazards(Cai2.RcoxA, Cai2ClinNew[ ,c( "KRAS_BRAF","Sex",  "no.of.buds", "Age")],  c(3:4), "CAIRO2")
+#PlotHazards(Cai1.RcoxB, Cai1ClinNew[ ,c( "Geslacht","KRAS_BRAF","Count", "Age")], c(3:4), "CAIRO")
+#PlotHazards(Cai2.RcoxB, Cai2ClinNew[ ,c( "KRAS_BRAF","Sex","no.of.buds", "Age")],  c(3:4), "CAIRO2")
+```
+
+```{r, eval=F, echo=F, fig.height=5, warning=F}
+## mutational information 
+Next, check if there are any associations between budding (using a cut-off of 5) and other reported clinical variables 
+
+par(mfrow=c(2,3))
+ContTable(table(Cai2Clin$BudCutoff, Cai2Clin$MSI), "MSI", chisqtest = T, ylabL = "MSI", xlabL = "Buds")
+ContTable(table(Cai2Clin$BudCutoff, Cai2Clin$PTEN), "PTEN", chisqtest = T, ylabL = "MSI", xlabL = "Buds")
+ContTable(table(Cai2Clin$BudCutoff, Cai2Clin$EGFR.GCN), "EGFR", chisqtest = T, ylabL = "MSI", xlabL = "Buds")
+ContTable(table(Cai2Clin$BudCutoff, Cai2Clin$KRAS_BRAF), "KRAS/BRAF", chisqtest = T, ylabL = "MSI", xlabL = "Buds")
+ContTable(table(Cai2Clin$BudCutoff, Cai2Clin$Response), "Response", chisqtest = T, ylabL = "MSI", xlabL = "Buds")
+```
+
+# R Session Info
+
+```{r}
+sessionInfo()
+```
