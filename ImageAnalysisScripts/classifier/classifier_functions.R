@@ -2,6 +2,7 @@
 
 library(preprocessCore)
 library(randomForest)
+library(gsubfn)
 
 ReadFromCSV=function(DirPath, mapdir, idxsort=NULL){
   DirNames=dir(DirPath, "*.csv")
@@ -14,7 +15,7 @@ ReadFromCSV=function(DirPath, mapdir, idxsort=NULL){
   temp=list()
   for (i in 1:length(DirNames)){
     # print(sprintf("%g", i))
-    tempA=read.table(sprintf("%s%s", DirPath, DirNames[i]), sep="\t", header=T, stringsAsFactors =F)
+    tempA=read.table(sprintf("%s/%s", DirPath, DirNames[i]), sep="\t", header=T, stringsAsFactors =F)
     tempA=tempA[ ,-7]
     tt=as.character(strapply(tempA$ImageNo, "[R|_][0-9]+[C|_][0-9]+_[_|A-Z]"))
     tt=strapply(tt, "[0-9]+")
@@ -27,7 +28,7 @@ ReadFromCSV=function(DirPath, mapdir, idxsort=NULL){
   }
   MFiles=dir(mapdir, "*.csv")
   xslide=grep("*lide_", MFiles)
-  Slide_No=read.csv(sprintf("%s%s", mapdir, MFiles[xslide]), header=T, stringsAsFactors =F)
+  Slide_No=read.csv(sprintf("%s/%s", mapdir, MFiles[xslide]), header=T, stringsAsFactors =F)
   if (length(MFiles)==nrow(Slide_No)+1){
     ## FOr Cairo and AMC mappings
     for (i in 1:nrow(Slide_No)){
@@ -45,10 +46,11 @@ ReadFromCSV=function(DirPath, mapdir, idxsort=NULL){
       tempB$Row=substr(tempB$Row, 2, 3)   
       tempB$Col=substr(tempB$Col, 2, 3)
       idx2=grep(Slide_No[ i,1], MFiles)
-      mapping=read.csv(sprintf('%s%s', mapdir, MFiles[idx2]), header=F)
+      mapping=read.csv(sprintf('%s/%s', mapdir, MFiles[idx2]), header=F)
+
       Maps=sapply(1:nrow(tempB), function(x) as.character(mapping[as.numeric(tempB$Row[x]),as.numeric(tempB$Col[x])]))
       tempB$Pat=Maps
-      save(tempB, file=sprintf("%sRdataParts/data_%g.RData", DirPath, i))
+      save(tempB, file=sprintf("%s/RdataParts/data_%g.RData", DirPath, i))
     }
   } else {
     ## Leiden Mappings
@@ -289,4 +291,48 @@ temp[temp>1.5]=1.5
 rownames(temp)=rownames(data)
 colnames(temp)=colnames(data)
 temp
+}
+
+
+Compress.Scores=function(Probs, Cairo.h, meth=1, prob=0.6){
+  MProbs=sapply(1:nrow(Probs), function(x) ifelse(Probs[x, 2]<prob, 1, 2))
+  names(MProbs)=rownames(Probs)
+  MProbs=unlist(MProbs)
+  # browser()
+  uni.samp <- unique(c(Cairo.h))
+  report.co <- matrix(0, length(uni.samp), 3)
+  for(i in 1:length(uni.samp)) {
+    # print(sprintf("%g", i))
+    inds <- which(Cairo.h==uni.samp[i])
+    this.pred <- as.character(MProbs[inds])
+    report.co[i, 1] <- sum(this.pred==1, na.rm = T)
+    report.co[i, 2] <- sum(this.pred==2, na.rm = T)
+    #if (sum(this.pred==2)>0){
+    if (report.co[i, 2]>=report.co[i, 1]){
+      report.co[i, 3] <- mean(Probs[inds[which(this.pred==2)], 2])
+    } else {
+      report.co[i, 3]<-mean(Probs[inds[which(this.pred==1)], 1])
+    }
+  }
+  rownames(report.co) <- uni.samp
+  colnames(report.co) <- c("CCS1", "CCS3", "Probability")
+  
+  pred1 <- rep(NA, nrow(report.co))
+  if (meth==1){
+    pred1[report.co[, "CCS3"] >= 1] <- 3
+    pred1[report.co[, "CCS3"] < 1] <- 1}
+  if (meth==2){
+    pred1[report.co[, "CCS3"] >= report.co[, "CCS1"]] <- 3
+    pred1[report.co[, "CCS3"] < report.co[, "CCS1"]] <- 1
+  }
+  if (meth==3){
+    pred1 <- rep(1, nrow(report.co))
+    pred1[as.numeric(report.co[, "Probability"])>=prob]=3
+  }
+  report=cbind(unique(c(Cairo.h)), report.co, pred1)
+  colnames(report)=c("Pat", "ccs1.count", "ccs3.count", "certainty", "CCS")
+  rownames(report)=unique(c(Cairo.h))
+  #idx=match(MSIpos, rownames(report))
+  #report[idx, 5]=2
+  report
 }

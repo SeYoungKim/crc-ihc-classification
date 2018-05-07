@@ -1,6 +1,8 @@
 ##Collate the information from Image Analysis into a single R object
 # Here we use the AMC set as an example:
 
+source("classifier_functions.R")
+
 #########################
 ## 1. Prepare the data
 ########################
@@ -9,10 +11,10 @@
 # as a folder containing the mapping information. The "mapping" folder must contain:
 # 1. a file containing "_map.csv" extension. This is the TMA map. May contain several files if several slides are present
 # 2. "_slide_no.csv" file containing unique identifiers to determine which 
-ReadFromCSV("AMC_set/", "AMC_mapping/")
+ReadFromCSV("AMC_data/", "AMC_mapping/")
 
 # The output of this is an .RData file. Let's load this:
-AMCdata=LoadFiles("AMC_set")
+AMCdata=LoadFiles("AMC_data")
 
 # Next, we need to load information about the patient, including MSI status and class if this is the predictor class.
 AMCclin=read.csv("AMCclinical.csv", header=T)
@@ -52,8 +54,8 @@ PatClasses = Compress.Scores(output, AMCdata.train$PatID$Pat, 2, 0.6)
 ########################
 
 ## Run the above loading steps to classify this subset of CAIRO patients
-ReadFromCSV("Cairo1_set/", "mapping_Cairo1/")
-Cai1data=LoadFiles("Cairo1_set/")
+ReadFromCSV("CAIRO_data", "CAIRO_mapping")
+Cai1data=LoadFiles("CAIRO_data/")
 ## Input clinical data
 Cai1Clin=read.csv("Cairo1_clinical.csv")
 ## preprocess data
