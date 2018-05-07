@@ -280,3 +280,13 @@ PreProcess=function(data, classes, ID='Train', rm.range=c(0.2, 0.6), na.rm=T){
   
   ret=list(data=data, PatID=PatID)
 }
+
+MedScale=function(data){
+xmin=apply(data, 2, function(x) quantile(x, 0.025, na.rm=T))
+xmax=apply(data, 2, function(x) quantile(x, 0.975, na.rm=T))
+temp=sapply(1:ncol(data), function(x) (data[ ,x]-xmin[x])/xmax[x], simplify=T)
+temp[temp>1.5]=1.5
+rownames(temp)=rownames(data)
+colnames(temp)=colnames(data)
+temp
+}
